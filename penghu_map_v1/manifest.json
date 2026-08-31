@@ -1,0 +1,86 @@
+{
+  "format": "fall-of-penghu-map",
+  "format_version": 1,
+  "content_version": "1.0.0",
+  "crs": "EPSG:3825",
+  "units": "m",
+  "y_axis": "northing_up",
+  "coordinates": "EPSG:3825_local_meters",
+  "origin_xy": [
+    0.0,
+    0.0
+  ],
+  "origin_epsg3825": [
+    303629.30711733666,
+    2596980.7306913873
+  ],
+  "frame_min_xy": [
+    -100000.0,
+    -100000.0
+  ],
+  "frame_max_xy": [
+    100000.0,
+    100000.0
+  ],
+  "bbox_penghu": [
+    -21501.73021174979,
+    -31972.304984626826,
+    20594.50933979964,
+    34653.42296060221
+  ],
+  "bbox_taiwan": [
+    52398.14360659075,
+    -100000.00000000047,
+    100000.00000000105,
+    91002.69847211894
+  ],
+  "sea": "background_not_polygon",
+  "layers": {
+    "taiwan": {
+      "file": "taiwan.geojson",
+      "features": 1,
+      "vertices": 717
+    },
+    "coast": {
+      "file": "coast.geojson",
+      "features": 121,
+      "holes": 0
+    },
+    "vegetation": {
+      "file": "vegetation.geojson",
+      "features": 296,
+      "holes": 0,
+      "variant": "F",
+      "hash": "ee370e5454a7"
+    },
+    "buildings": {
+      "file": "buildings.geojson",
+      "features": 11099,
+      "osm": 3601,
+      "modeled": 7498,
+      "overlaps_dropped": 0
+    },
+    "roads": {
+      "file": "roads.geojson",
+      "features": 1476
+    },
+    "airports": {
+      "file": "airports.geojson",
+      "features": 54,
+      "icao": [
+        "RCQC",
+        "RCCM",
+        "RCWA"
+      ]
+    }
+  },
+  "excluded": [
+    "pink_roads",
+    "pixelated_zones",
+    "aerodrome_boundaries",
+    "dem",
+    "orthophoto",
+    "lod_coast_variants"
+  ],
+  "notes": "Taiwan clipped by world frame; do not draw when viewport is Penghu-only. Coordinates are local meters: EPSG:3825 minus origin_epsg3825. v1 has one full-detail coast; LOD simplification is not in this package."
+}
