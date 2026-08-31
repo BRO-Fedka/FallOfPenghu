@@ -10,6 +10,8 @@ from fall_of_penghu.camera import Camera
 from fall_of_penghu.mapdata import MapData
 from fall_of_penghu.render.geom import pack_xy, stroke_polyline, stroke_seaward_band, triangulate
 from fall_of_penghu.render.seafield import SEA_MAX_DIST_M, SEA_TEX_SIZE, build_sea_distance
+from fall_of_penghu.render.veg import VegParams
+from fall_of_penghu.render.vegfield import _penghu_frame
 from fall_of_penghu.render.water import WaterParams
 from fall_of_penghu.render.scene import (
     AIRPORTS_FADE_FULL_M,
@@ -75,11 +77,31 @@ def _concat(chunks: list[array]) -> array:
     return out
 
 
+def _flip_band_t(data: array) -> array:
+    flipped = array("f", data)
+    for i in range(2, len(flipped), 5):
+        flipped[i] = 1.0 - flipped[i]
+    return flipped
+
+
+def _sdf_tex_size(
+    frame: tuple[float, float, float, float], max_dim: int
+) -> tuple[int, int]:
+    minx, miny, maxx, maxy = frame
+    span_x = max(maxx - minx, 1.0)
+    span_y = max(maxy - miny, 1.0)
+    cell = max(span_x, span_y) / max(max_dim - 1, 1)
+    width = max(2, int(round(span_x / cell)) + 1)
+    height = max(2, int(round(span_y / cell)) + 1)
+    return width, height
+
+
 @dataclass
 class StaticMesh:
     vao: object
     nverts: int
     features: int
+    vbo: object = None
 
 
 class GLMapRenderer:
@@ -94,6 +116,7 @@ class GLMapRenderer:
         self.world = world
         self.ctx = ctx
         self.radar = False
+        self.debug_veg = False
         self.last_stats: dict[str, int] = {}
         self._size = (max(1, size[0]), max(1, size[1]))
         self._t0 = perf_counter()
@@ -101,6 +124,7 @@ class GLMapRenderer:
         self._cpu_meshes: dict[int, array] = {}
         self.layers: dict[str, StaticMesh] = {}
         self.water = WaterParams()
+        self.veg = VegParams()
         self.prog_map = ctx.program(
             vertex_shader=_shader("map.vert"),
             fragment_shader=_shader("map.frag"),
@@ -121,6 +145,18 @@ class GLMapRenderer:
             vertex_shader=_shader("shore.vert"),
             fragment_shader=_shader("shore.frag"),
         )
+        self.prog_veg = ctx.program(
+            vertex_shader=_shader("veg.vert"),
+            fragment_shader=_shader("veg.frag"),
+        )
+        self.prog_veg_sdf = ctx.program(
+            vertex_shader=_shader("veg_sdf.vert"),
+            fragment_shader=_shader("veg_sdf.frag"),
+        )
+        self.prog_veg_sdf_fill = ctx.program(
+            vertex_shader=_shader("veg.vert"),
+            fragment_shader=_shader("veg_sdf_fill.frag"),
+        )
         self._load_cpu_meshes()
         self._upload_static_layers()
         self._cpu_meshes.clear()
@@ -130,6 +166,15 @@ class GLMapRenderer:
         self._shore_vao = None
         self._shore_nverts = 0
         self._upload_shore_band()
+        self._veg_tex = None
+        self._veg_frame = (-22_000.0, -32_000.0, 21_000.0, 35_000.0)
+        self._veg_tex_size = (2, 2)
+        self._forest_sdf_vao = None
+        self._forest_sdf_nverts = 0
+        self._grass_sdf_vao = None
+        self._grass_sdf_nverts = 0
+        self._upload_veg_bands()
+        self._bake_veg_sdf()
         self._post_vbo = ctx.buffer(FULLSCREEN_TRI.tobytes())
         self._post_vao = ctx.vertex_array(self.prog_post, [(self._post_vbo, "2f", "in_pos")])
         self._sea_vao = ctx.vertex_array(self.prog_sea, [(self._post_vbo, "2f", "in_pos")])
@@ -168,7 +213,7 @@ class GLMapRenderer:
             blobs = []
             for group in _poly_groups(self.world):
                 for feat in group:
-                    tris = triangulate(feat.exterior)
+                    tris = triangulate(feat.exterior, feat.holes or None)
                     blobs.append(pack_xy(tris).tobytes() if tris else None)
             MESH_CACHE.parent.mkdir(parents=True, exist_ok=True)
             MESH_CACHE.write_bytes(pickle.dumps({"key": key, "blobs": blobs}, protocol=4))
@@ -185,12 +230,12 @@ class GLMapRenderer:
                     count += 1
         print(f"GL triangulate: {count} polygons in {perf_counter() - t0:.3f}s", flush=True)
 
-    def _upload(self, data: array, features: int) -> StaticMesh | None:
+    def _upload(self, data: array, features: int, prog=None) -> StaticMesh | None:
         if len(data) < 6 or features <= 0:
             return None
         vbo = self.ctx.buffer(data.tobytes())
-        vao = self.ctx.vertex_array(self.prog_map, [(vbo, "2f", "in_pos")])
-        return StaticMesh(vao=vao, nverts=len(data) // 2, features=features)
+        vao = self.ctx.vertex_array(prog or self.prog_map, [(vbo, "2f", "in_pos")])
+        return StaticMesh(vao=vao, nverts=len(data) // 2, features=features, vbo=vbo)
 
     def _tris(self, feat) -> array | None:
         return self._cpu_meshes.get(id(feat))
@@ -256,21 +301,21 @@ class GLMapRenderer:
         coast_outline = _concat(outline_chunks)
 
         specs = {
-            "taiwan": (taiwan, n_taiwan),
-            "coast": (coast, n_coast),
-            "forest": (forest, n_forest),
-            "grass": (grass, n_grass),
-            "buildings": (buildings, n_buildings),
-            "airports": (airports, n_airports),
-            "roads": (roads, n_roads),
-            "bridges": (bridges, n_bridges),
-            "airport_lines": (airport_lines, n_apt_lines),
-            "coast_outline": (coast_outline, n_outline),
+            "taiwan": (taiwan, n_taiwan, self.prog_map),
+            "coast": (coast, n_coast, self.prog_map),
+            "forest": (forest, n_forest, self.prog_veg),
+            "grass": (grass, n_grass, self.prog_veg),
+            "buildings": (buildings, n_buildings, self.prog_map),
+            "airports": (airports, n_airports, self.prog_map),
+            "roads": (roads, n_roads, self.prog_map),
+            "bridges": (bridges, n_bridges, self.prog_map),
+            "airport_lines": (airport_lines, n_apt_lines, self.prog_map),
+            "coast_outline": (coast_outline, n_outline, self.prog_map),
         }
         verts = 0
         draws = 0
-        for name, (data, features) in specs.items():
-            mesh = self._upload(data, features)
+        for name, (data, features, prog) in specs.items():
+            mesh = self._upload(data, features, prog)
             if mesh is not None:
                 self.layers[name] = mesh
                 verts += mesh.nverts
@@ -279,6 +324,15 @@ class GLMapRenderer:
             f"GL static VBO: {draws} layers, {verts} verts in {perf_counter() - t0:.3f}s",
             flush=True,
         )
+
+    def _sdf_fill_vao(self, name: str) -> tuple[object | None, int]:
+        mesh = self.layers.get(name)
+        if mesh is None or mesh.vbo is None or mesh.nverts < 3:
+            return None, 0
+        vao = self.ctx.vertex_array(
+            self.prog_veg_sdf_fill, [(mesh.vbo, "2f", "in_pos")]
+        )
+        return vao, mesh.nverts
 
     def _upload_sea_field(self) -> None:
         data, size, frame = build_sea_distance(self.world)
@@ -310,6 +364,197 @@ class GLMapRenderer:
         )
         self._shore_nverts = len(data) // 5
         print(f"GL shore band: {self._shore_nverts} verts", flush=True)
+
+    def _upload_veg_bands(self) -> None:
+        width = max(self.veg.band_width_m, 8.0)
+        forest_chunks: list[array] = []
+        grass_chunks: list[array] = []
+        n_forest = 0
+        n_grass = 0
+        for feat in self.world.vegetation:
+            band = stroke_seaward_band(
+                feat.exterior,
+                0.05,
+                closed=True,
+                landward_m=width,
+            )
+            holes = []
+            for hole in feat.holes or []:
+                inner = stroke_seaward_band(
+                    hole, width, closed=True, landward_m=0.05
+                )
+                if len(inner) >= 15:
+                    holes.append(_flip_band_t(inner))
+            if feat.class_name == "forest":
+                if len(band) >= 15:
+                    forest_chunks.append(band)
+                    n_forest += 1
+                forest_chunks.extend(holes)
+            else:
+                if len(band) >= 15:
+                    grass_chunks.append(band)
+                    n_grass += 1
+                grass_chunks.extend(holes)
+
+        def upload(chunks: list[array], sdf_prog):
+            data = _concat(chunks)
+            if len(data) < 15:
+                return None, 0
+            vbo = self.ctx.buffer(data.tobytes())
+            nverts = len(data) // 5
+            sdf_vao = self.ctx.vertex_array(
+                sdf_prog, [(vbo, "2f 1f 2x4", "in_pos", "in_t")]
+            )
+            return sdf_vao, nverts
+
+        self._forest_sdf_vao, self._forest_sdf_nverts = upload(
+            forest_chunks, self.prog_veg_sdf
+        )
+        self._grass_sdf_vao, self._grass_sdf_nverts = upload(
+            grass_chunks, self.prog_veg_sdf
+        )
+        print(
+            f"GL veg bands: forest {self._forest_sdf_nverts} verts / {n_forest}  "
+            f"grass {self._grass_sdf_nverts} verts / {n_grass}",
+            flush=True,
+        )
+
+    def _bake_veg_sdf(self) -> None:
+        frame = _penghu_frame(self.world)
+        max_dim = 8192
+        try:
+            info = self.ctx.info or {}
+            hw = int(info.get("GL_MAX_TEXTURE_SIZE") or max_dim)
+            max_dim = max(256, min(max_dim, hw))
+        except Exception:
+            pass
+        size = _sdf_tex_size(frame, max_dim)
+        tex = self.ctx.texture(size, 2)
+        tex.filter = (self.mgl.LINEAR, self.mgl.LINEAR)
+        tex.repeat_x = False
+        tex.repeat_y = False
+        fbo = self.ctx.framebuffer(color_attachments=[tex])
+        prev = self.ctx.fbo
+        width = max(self.veg.band_width_m, 8.0)
+        fbo.use()
+        self.ctx.viewport = (0, 0, size[0], size[1])
+        self.ctx.disable(self.mgl.DEPTH_TEST)
+        self.ctx.disable(self.mgl.CULL_FACE)
+        self.ctx.clear(0.0, 0.0, 0.0, 1.0)
+        self.ctx.disable(self.mgl.BLEND)
+        _set_uniform(self.prog_veg_sdf_fill, "u_view", frame)
+        forest_fill, forest_fill_n = self._sdf_fill_vao("forest")
+        grass_fill, grass_fill_n = self._sdf_fill_vao("grass")
+
+        def draw_channel(vao, nverts, mask) -> None:
+            if vao is None or nverts < 3:
+                return
+            self.ctx.color_mask = mask
+            vao.render(mode=self.mgl.TRIANGLES, vertices=nverts)
+
+        draw_channel(forest_fill, forest_fill_n, (True, False, False, False))
+        draw_channel(grass_fill, grass_fill_n, (False, True, False, False))
+
+        used_min = False
+        min_eq = getattr(self.mgl, "MIN", None)
+        try:
+            if min_eq is not None:
+                self.ctx.blend_equation = min_eq
+                self.ctx.enable(self.mgl.BLEND)
+                used_min = True
+            else:
+                self.ctx.disable(self.mgl.BLEND)
+        except Exception:
+            self.ctx.disable(self.mgl.BLEND)
+        _set_uniform(self.prog_veg_sdf, "u_view", frame)
+        _set_uniform(self.prog_veg_sdf, "u_band_width", width)
+        _set_uniform(self.prog_veg_sdf, "u_max", width)
+
+        draw_channel(
+            self._forest_sdf_vao,
+            self._forest_sdf_nverts,
+            (True, False, False, False),
+        )
+        draw_channel(
+            self._grass_sdf_vao,
+            self._grass_sdf_nverts,
+            (False, True, False, False),
+        )
+        self.ctx.color_mask = True, True, True, True
+        self.ctx.disable(self.mgl.BLEND)
+        if used_min:
+            self.ctx.blend_equation = self.mgl.FUNC_ADD
+        self.ctx.blend_func = self.mgl.SRC_ALPHA, self.mgl.ONE_MINUS_SRC_ALPHA
+        if prev is not None:
+            prev.use()
+        else:
+            self.ctx.screen.use()
+        fbo.release()
+        self._veg_tex = tex
+        self._veg_frame = frame
+        self._veg_tex_size = size
+        cell = (frame[2] - frame[0]) / max(size[0] - 1, 1)
+        print(
+            f"GL veg SDF {size[0]}x{size[1]} ({cell:.1f} m/px)",
+            flush=True,
+        )
+
+    def _bind_veg(
+        self,
+        prog,
+        kind: int,
+        view: tuple[float, float, float, float],
+        view_w: float,
+        pal: dict[str, tuple[int, int, int]],
+    ) -> None:
+        if self._sea_tex is not None:
+            self._sea_tex.use(0)
+        if self._veg_tex is not None:
+            self._veg_tex.use(1)
+        fill = pal["forest"] if kind == 1 else pal["grass"]
+        soil = pal["grass"]
+        canopy = pal["forest"]
+        land = pal["land"]
+        _set_uniform(prog, "u_sea", 0)
+        _set_uniform(prog, "u_vegf", 1)
+        _set_uniform(prog, "u_view", view)
+        _set_uniform(prog, "u_sea_frame", self._sea_frame)
+        _set_uniform(prog, "u_sea_max", SEA_MAX_DIST_M)
+        _set_uniform(prog, "u_sea_tex", float(SEA_TEX_SIZE))
+        _set_uniform(prog, "u_veg_frame", self._veg_frame)
+        _set_uniform(prog, "u_veg_tex", (float(self._veg_tex_size[0]), float(self._veg_tex_size[1])))
+        _set_uniform(prog, "u_veg_max", float(self.veg.band_width_m))
+        _set_uniform(prog, "u_view_width", view_w)
+        _set_uniform(prog, "u_kind", kind)
+        _set_uniform(prog, "u_radar", 1 if self.radar else 0)
+        _set_uniform(prog, "u_debug", 1 if self.debug_veg else 0)
+        _set_uniform(prog, "u_fill", (fill[0] / 255.0, fill[1] / 255.0, fill[2] / 255.0))
+        _set_uniform(prog, "u_soil", (soil[0] / 255.0, soil[1] / 255.0, soil[2] / 255.0))
+        _set_uniform(prog, "u_canopy", (canopy[0] / 255.0, canopy[1] / 255.0, canopy[2] / 255.0))
+        _set_uniform(prog, "u_land", (land[0] / 255.0, land[1] / 255.0, land[2] / 255.0))
+        if kind == 1:
+            _set_uniform(prog, "u_tree_spacing", self.veg.forest_spacing_m)
+            _set_uniform(prog, "u_tree_freq", self.veg.forest_freq)
+        else:
+            _set_uniform(prog, "u_tree_spacing", self.veg.grass_spacing_m)
+            _set_uniform(prog, "u_tree_freq", self.veg.grass_freq)
+        self.veg.bind(_set_uniform, prog)
+
+    def _draw_veg(
+        self,
+        name: str,
+        kind: int,
+        view: tuple[float, float, float, float],
+        view_w: float,
+        pal: dict[str, tuple[int, int, int]],
+    ) -> int:
+        mesh = self.layers.get(name)
+        if mesh is None:
+            return 0
+        self.ctx.disable(self.mgl.BLEND)
+        self._bind_veg(self.prog_veg, kind, view, view_w, pal)
+        mesh.vao.render(mode=self.mgl.TRIANGLES, vertices=mesh.nverts)
+        return mesh.features
 
     def _draw_shore(
         self, view: tuple[float, float, float, float], view_w: float
@@ -442,8 +687,8 @@ class GLMapRenderer:
 
         stats["taiwan"] = self._draw_mesh("taiwan", pal["taiwan"])
         stats["coast"] = self._draw_mesh("coast", pal["land"])
-        stats["vegetation"] += self._draw_mesh("forest", pal["forest"])
-        stats["vegetation"] += self._draw_mesh("grass", pal["grass"])
+        stats["vegetation"] += self._draw_veg("forest", 1, view, view_w, pal)
+        stats["vegetation"] += self._draw_veg("grass", 0, view, view_w, pal)
         self._draw_shore(view, view_w)
 
         road_a = layer_opacity(view_w, ROADS_FADE_FULL_M, ROADS_FADE_GONE_M)

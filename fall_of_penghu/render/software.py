@@ -17,6 +17,7 @@ class SoftwareMapRenderer:
         self.world = world
         self.surface = surface
         self.radar = False
+        self.debug_veg = False
         self.last_stats: dict[str, int] = {}
 
     def palette(self) -> dict[str, tuple[int, int, int]]:

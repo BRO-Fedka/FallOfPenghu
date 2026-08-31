@@ -49,7 +49,7 @@ def run() -> None:
     dragging = False
     running = True
     while running:
-        dt = clock.tick(60) / 1000.0
+        dt = clock.tick(6000) / 1000.0
         screen_w, screen_h = pygame.display.get_window_size()
         mouse = pygame.mouse.get_pos()
 
@@ -64,6 +64,8 @@ def run() -> None:
                     running = False
                 elif event.key == pygame.K_r:
                     renderer.radar = not renderer.radar
+                elif event.key == pygame.K_SPACE:
+                    renderer.debug_veg = not getattr(renderer, "debug_veg", False)
                 elif event.key == pygame.K_HOME:
                     camera.move_to(cx, cy, view_w)
             elif event.type == pygame.MOUSEBUTTONDOWN:
@@ -103,12 +105,13 @@ def run() -> None:
             f"cam {camera.x:.0f},{camera.y:.0f}   "
             f"cursor {wx:.0f},{wy:.0f} m   "
             f"{'RADAR' if renderer.radar else 'MAP'}   "
+            f"{'VEGDBG ' if getattr(renderer, 'debug_veg', False) else ''}"
             f"draw c{stats['coast']} v{stats['vegetation']} "
             f"b{stats['buildings']} r{stats['roads']}"
         )
         text = font.render(hud, True, pal["hud"])
         hint = font.render(
-            "WASD pan  MMB drag  wheel zoom  R radar  Home reset  Esc quit",
+            "WASD pan  MMB drag  wheel zoom  R radar  Space veg debug  Home reset  Esc quit",
             True,
             pal["hud"],
         )

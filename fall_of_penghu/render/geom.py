@@ -193,8 +193,41 @@ def _clip_ears(pts: list[tuple[float, float]]) -> list[tuple[float, float]]:
     return tris
 
 
-def triangulate(points: list[tuple[float, float]]) -> list[tuple[float, float]]:
-    """Fill triangles for a simple ring. Empty if the ring is degenerate."""
+def _bridge_holes(
+    outer: list[tuple[float, float]],
+    holes: list[list[tuple[float, float]]],
+) -> list[tuple[float, float]]:
+    """Splice holes into the outer ring so ear clipping can fill the difference."""
+    pts = _dedupe_ring(outer)
+    if _signed_area(pts) < 0:
+        pts = list(reversed(pts))
+    for hole in holes:
+        h = _dedupe_ring(hole)
+        if len(h) < 3:
+            continue
+        if _signed_area(h) > 0:
+            h = list(reversed(h))
+        best_d = None
+        best_i = 0
+        best_j = 0
+        for i, op in enumerate(pts):
+            for j, hp in enumerate(h):
+                d = hypot(op[0] - hp[0], op[1] - hp[1])
+                if best_d is None or d < best_d:
+                    best_d = d
+                    best_i = i
+                    best_j = j
+        pts = pts[: best_i + 1] + h[best_j:] + h[: best_j + 1] + pts[best_i:]
+    return pts
+
+
+def triangulate(
+    points: list[tuple[float, float]],
+    holes: list[list[tuple[float, float]]] | None = None,
+) -> list[tuple[float, float]]:
+    """Fill triangles for a simple ring, optionally with holes."""
+    if holes:
+        points = _bridge_holes(points, holes)
     pts = _dedupe_ring(points)
     n = len(pts)
     if n < 3:

@@ -57,6 +57,7 @@ def _iter_lines(geom: dict) -> list[list[tuple[float, float]]]:
 class PolyFeature:
     bbox: tuple[float, float, float, float]
     exterior: list[tuple[float, float]]
+    holes: list[list[tuple[float, float]]] = field(default_factory=list)
     area_m2: float = 0.0
     class_name: str = ""
     kind: str = ""
@@ -105,6 +106,7 @@ def _polys_from_feature(feat: dict, **fields: Any) -> list[PolyFeature]:
             PolyFeature(
                 bbox=bbox,
                 exterior=exterior,
+                holes=list(rings[1:]),
                 **fields,
             )
         )

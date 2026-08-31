@@ -7,6 +7,13 @@ float hash11(vec2 p) {
     return fract((p3.x + p3.y) * p3.z);
 }
 
+// Integer lattice hash. Float fract hashes smear along X at large world coords.
+float hash_i3(ivec3 p) {
+    uvec3 n = uvec3(p) * uvec3(1597334677u, 3812015801u, 2798796413u);
+    uint m = (n.x ^ n.y ^ n.z) * 747796405u;
+    return float(m >> 8u) * (1.0 / 16777215.0);
+}
+
 float valnoise(vec2 p) {
     vec2 i = floor(p);
     vec2 f = fract(p);
