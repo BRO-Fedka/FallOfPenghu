@@ -18,6 +18,8 @@ class VegParams:
     lod_far_m: float = BUILDINGS_FADE_GONE_M
     mix_min_m: float = 10.0
     mix_max_m: float = 25.0
+    mix_noise_m: float = 10.0
+    mix_noise_amp: float = 1.0
     forest_spacing_m: float = 9.0
     grass_spacing_m: float = 24.0
     forest_freq: float = 0.84
@@ -35,6 +37,8 @@ class VegParams:
         set_uniform(prog, "u_lod_far", float(self.lod_far_m))
         set_uniform(prog, "u_mix_min", float(self.mix_min_m))
         set_uniform(prog, "u_mix_max", float(self.mix_max_m))
+        set_uniform(prog, "u_mix_noise_scale", 1.0 / max(self.mix_noise_m, 1e-6))
+        set_uniform(prog, "u_mix_noise_amp", float(self.mix_noise_amp))
         set_uniform(prog, "u_r_core_min", float(self.r_core_min))
         set_uniform(prog, "u_r_core_max", float(self.r_core_max))
         set_uniform(prog, "u_r_edge_min", float(self.r_edge_min))

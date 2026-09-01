@@ -48,10 +48,10 @@
     },
     "vegetation": {
       "file": "vegetation.geojson",
-      "features": 291,
-      "holes": 4,
+      "features": 290,
+      "holes": 0,
       "variant": "F",
-      "hash": "17b7250d25d2"
+      "hash": "d37652b4859f"
     },
     "buildings": {
       "file": "buildings.geojson",

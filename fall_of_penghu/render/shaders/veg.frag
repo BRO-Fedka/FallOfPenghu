@@ -2,12 +2,9 @@
 #include "common.glsl"
 
 uniform vec4 u_view;
-uniform vec4 u_sea_frame;
-uniform sampler2D u_sea;
-uniform float u_sea_max;
-uniform float u_sea_tex;
 uniform vec4 u_veg_frame;
 uniform sampler2D u_vegf;
+uniform sampler2D u_veg_mix;
 uniform vec2 u_veg_tex;
 uniform float u_veg_max;
 uniform float u_view_width;
@@ -22,6 +19,8 @@ uniform float u_lod_near;
 uniform float u_lod_far;
 uniform float u_mix_min;
 uniform float u_mix_max;
+uniform float u_mix_noise_scale;
+uniform float u_mix_noise_amp;
 uniform float u_tree_spacing;
 uniform float u_tree_freq;
 uniform float u_r_core_min;
@@ -29,20 +28,12 @@ uniform float u_r_core_max;
 uniform float u_r_edge_min;
 uniform float u_r_edge_max;
 uniform float u_tree_margin;
-uniform float u_sea_clip;
 uniform float u_band_width;
 in vec2 v_world;
 in float v_t;
 in vec2 v_n;
 in float v_band;
 out vec4 f_color;
-
-vec2 texel_uv(vec2 world, vec4 frame, vec2 ntex) {
-    vec2 span = max(frame.zw - frame.xy, vec2(1.0));
-    vec2 n = max(ntex, vec2(2.0));
-    vec2 uv = (world - frame.xy) / span;
-    return uv * ((n - 1.0) / n) + (0.5 / n);
-}
 
 vec4 sample_veg(vec2 world) {
     vec2 span = max(u_veg_frame.zw - u_veg_frame.xy, vec2(1.0));
@@ -54,6 +45,12 @@ float own_field(vec2 pos) {
     vec4 vf = sample_veg(pos);
     float nrm = (u_kind == 1) ? vf.r : vf.g;
     return nrm * u_band_width;
+}
+
+float mix_field(vec2 pos) {
+    vec2 span = max(u_veg_frame.zw - u_veg_frame.xy, vec2(1.0));
+    vec2 uv = (pos - u_veg_frame.xy) / span;
+    return texture(u_veg_mix, clamp(uv, 0.0, 1.0)).r * u_band_width;
 }
 
 float density_grad_at(float field) {
@@ -136,7 +133,8 @@ vec3 tree_blobs(vec2 p, out float coverage) {
                 if (d >= radius) {
                     continue;
                 }
-                float cov = 1.0 - smoothstep(radius * 0.52, radius, d);
+                float aa = max(u_view_width * 0.0007, 0.04);
+                float cov = clamp((radius - d) / aa, 0.0, 1.0);
                 if (cov > coverage) {
                     coverage = cov;
                     col = tree_tint(ivec3(c, t + 80), u_canopy);
@@ -148,13 +146,6 @@ vec3 tree_blobs(vec2 p, out float coverage) {
 }
 
 void main() {
-    vec2 sea_uv = texel_uv(v_world, u_sea_frame, vec2(u_sea_tex));
-    float sea_d = texture(u_sea, clamp(sea_uv, 0.0, 1.0)).r * u_sea_max;
-    if (sea_d > u_sea_clip) {
-        discard;
-    }
-
-    vec3 soil = u_soil;
     float fill_a = 1.0;
     if (u_radar == 0) {
         float span = max(u_lod_far - u_lod_near, 1.0);
@@ -172,8 +163,12 @@ void main() {
         canopy = tree_blobs(v_world, trees);
     }
 
+    float field = mix_field(v_world);
+    vec3 soil = land_soil_mix(
+        v_world, field, u_soil, u_land, u_mix_max, u_mix_noise_scale, u_mix_noise_amp
+    );
+
     if (u_debug == 1) {
-        float field = own_field(v_world);
         float margin = max(u_tree_margin, 0.5);
         vec3 col;
         if (field < margin) {

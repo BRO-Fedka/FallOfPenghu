@@ -77,11 +77,91 @@ def _concat(chunks: list[array]) -> array:
     return out
 
 
+def _ring_xy_closed(coords) -> list[tuple[float, float]]:
+    pts = [(float(x), float(y)) for x, y in coords]
+    if len(pts) >= 2 and pts[0] == pts[-1]:
+        pts.pop()
+    return pts
+
+
+def _shapely_polys(geom) -> list:
+    if geom is None or geom.is_empty:
+        return []
+    gtype = geom.geom_type
+    if gtype == "Polygon":
+        return [geom]
+    if gtype == "MultiPolygon":
+        return [p for p in geom.geoms if not p.is_empty]
+    if gtype == "GeometryCollection":
+        out = []
+        for item in geom.geoms:
+            out.extend(_shapely_polys(item))
+        return out
+    return []
+
+
+def _union_veg_rings(vegetation) -> list[tuple[list[tuple[float, float]], list[list[tuple[float, float]]]]]:
+    """Exterior + holes of forest∪grass. Shared forest/grass edges disappear."""
+    from shapely.geometry import Polygon
+    from shapely.ops import unary_union
+
+    geoms = []
+    for feat in vegetation:
+        try:
+            poly = Polygon(feat.exterior, feat.holes or None)
+        except Exception:
+            continue
+        if poly.is_empty:
+            continue
+        if not poly.is_valid:
+            poly = poly.buffer(0)
+        if poly is None or poly.is_empty:
+            continue
+        geoms.append(poly)
+    if not geoms:
+        return []
+    merged = unary_union(geoms)
+    if merged.is_empty:
+        return []
+    if not merged.is_valid:
+        merged = merged.buffer(0)
+    rings: list[tuple[list[tuple[float, float]], list[list[tuple[float, float]]]]] = []
+    for part in _shapely_polys(merged):
+        exterior = _ring_xy_closed(part.exterior.coords)
+        if len(exterior) < 3:
+            continue
+        holes = []
+        for hole in part.interiors:
+            ring = _ring_xy_closed(hole.coords)
+            if len(ring) >= 3:
+                holes.append(ring)
+        rings.append((exterior, holes))
+    return rings
+
+
 def _flip_band_t(data: array) -> array:
     flipped = array("f", data)
     for i in range(2, len(flipped), 5):
         flipped[i] = 1.0 - flipped[i]
     return flipped
+
+
+def _band_chunks_for_poly(
+    exterior: list[tuple[float, float]],
+    holes: list[list[tuple[float, float]]],
+    width: float,
+) -> list[array]:
+    chunks: list[array] = []
+    band = stroke_seaward_band(
+        exterior, 0.05, closed=True, landward_m=width
+    )
+    if len(band) >= 15:
+        chunks.append(band)
+    for hole in holes:
+        inner = stroke_seaward_band(hole, width, closed=True, landward_m=0.05)
+        if len(inner) >= 15:
+            chunks.append(_flip_band_t(inner))
+    return chunks
 
 
 def _sdf_tex_size(
@@ -149,6 +229,10 @@ class GLMapRenderer:
             vertex_shader=_shader("veg.vert"),
             fragment_shader=_shader("veg.frag"),
         )
+        self.prog_veg_grass = ctx.program(
+            vertex_shader=_shader("veg.vert"),
+            fragment_shader=_shader("veg_grass.frag"),
+        )
         self.prog_veg_sdf = ctx.program(
             vertex_shader=_shader("veg_sdf.vert"),
             fragment_shader=_shader("veg_sdf.frag"),
@@ -167,8 +251,11 @@ class GLMapRenderer:
         self._shore_nverts = 0
         self._upload_shore_band()
         self._veg_tex = None
+        self._veg_mix_tex = None
         self._veg_frame = (-22_000.0, -32_000.0, 21_000.0, 35_000.0)
         self._veg_tex_size = (2, 2)
+        self._veg_union_sdf_vao = None
+        self._veg_union_sdf_nverts = 0
         self._forest_sdf_vao = None
         self._forest_sdf_nverts = 0
         self._grass_sdf_vao = None
@@ -304,7 +391,7 @@ class GLMapRenderer:
             "taiwan": (taiwan, n_taiwan, self.prog_map),
             "coast": (coast, n_coast, self.prog_map),
             "forest": (forest, n_forest, self.prog_veg),
-            "grass": (grass, n_grass, self.prog_veg),
+            "grass": (grass, n_grass, self.prog_veg_grass),
             "buildings": (buildings, n_buildings, self.prog_map),
             "airports": (airports, n_airports, self.prog_map),
             "roads": (roads, n_roads, self.prog_map),
@@ -372,63 +459,51 @@ class GLMapRenderer:
         n_forest = 0
         n_grass = 0
         for feat in self.world.vegetation:
-            band = stroke_seaward_band(
-                feat.exterior,
-                0.05,
-                closed=True,
-                landward_m=width,
-            )
-            holes = []
-            for hole in feat.holes or []:
-                inner = stroke_seaward_band(
-                    hole, width, closed=True, landward_m=0.05
-                )
-                if len(inner) >= 15:
-                    holes.append(_flip_band_t(inner))
+            chunks = _band_chunks_for_poly(feat.exterior, feat.holes or [], width)
             if feat.class_name == "forest":
-                if len(band) >= 15:
-                    forest_chunks.append(band)
+                if chunks:
                     n_forest += 1
-                forest_chunks.extend(holes)
+                forest_chunks.extend(chunks)
             else:
-                if len(band) >= 15:
-                    grass_chunks.append(band)
+                if chunks:
                     n_grass += 1
-                grass_chunks.extend(holes)
+                grass_chunks.extend(chunks)
+        union_chunks: list[array] = []
+        n_union = 0
+        for exterior, holes in _union_veg_rings(self.world.vegetation):
+            part = _band_chunks_for_poly(exterior, holes, width)
+            if part:
+                n_union += 1
+            union_chunks.extend(part)
 
-        def upload(chunks: list[array], sdf_prog):
+        def upload(chunks: list[array]):
             data = _concat(chunks)
             if len(data) < 15:
                 return None, 0
             vbo = self.ctx.buffer(data.tobytes())
             nverts = len(data) // 5
-            sdf_vao = self.ctx.vertex_array(
-                sdf_prog, [(vbo, "2f 1f 2x4", "in_pos", "in_t")]
+            vao = self.ctx.vertex_array(
+                self.prog_veg_sdf, [(vbo, "2f 1f 2x4", "in_pos", "in_t")]
             )
-            return sdf_vao, nverts
+            return vao, nverts
 
-        self._forest_sdf_vao, self._forest_sdf_nverts = upload(
-            forest_chunks, self.prog_veg_sdf
-        )
-        self._grass_sdf_vao, self._grass_sdf_nverts = upload(
-            grass_chunks, self.prog_veg_sdf
-        )
+        self._forest_sdf_vao, self._forest_sdf_nverts = upload(forest_chunks)
+        self._grass_sdf_vao, self._grass_sdf_nverts = upload(grass_chunks)
+        self._veg_union_sdf_vao, self._veg_union_sdf_nverts = upload(union_chunks)
         print(
-            f"GL veg bands: forest {self._forest_sdf_nverts} verts / {n_forest}  "
-            f"grass {self._grass_sdf_nverts} verts / {n_grass}",
+            f"GL veg bands: forest {self._forest_sdf_nverts} / {n_forest}  "
+            f"grass {self._grass_sdf_nverts} / {n_grass}  "
+            f"union {self._veg_union_sdf_nverts} / {n_union}",
             flush=True,
         )
 
-    def _bake_veg_sdf(self) -> None:
-        frame = _penghu_frame(self.world)
-        max_dim = 8192
-        try:
-            info = self.ctx.info or {}
-            hw = int(info.get("GL_MAX_TEXTURE_SIZE") or max_dim)
-            max_dim = max(256, min(max_dim, hw))
-        except Exception:
-            pass
-        size = _sdf_tex_size(frame, max_dim)
+    def _bake_sdf_rg(
+        self,
+        size: tuple[int, int],
+        frame: tuple[float, float, float, float],
+        fills: list[tuple[object | None, int, tuple[bool, bool, bool, bool]]],
+        bands: list[tuple[object | None, int, tuple[bool, bool, bool, bool]]],
+    ):
         tex = self.ctx.texture(size, 2)
         tex.filter = (self.mgl.LINEAR, self.mgl.LINEAR)
         tex.repeat_x = False
@@ -441,10 +516,6 @@ class GLMapRenderer:
         self.ctx.disable(self.mgl.DEPTH_TEST)
         self.ctx.disable(self.mgl.CULL_FACE)
         self.ctx.clear(0.0, 0.0, 0.0, 1.0)
-        self.ctx.disable(self.mgl.BLEND)
-        _set_uniform(self.prog_veg_sdf_fill, "u_view", frame)
-        forest_fill, forest_fill_n = self._sdf_fill_vao("forest")
-        grass_fill, grass_fill_n = self._sdf_fill_vao("grass")
 
         def draw_channel(vao, nverts, mask) -> None:
             if vao is None or nverts < 3:
@@ -452,8 +523,10 @@ class GLMapRenderer:
             self.ctx.color_mask = mask
             vao.render(mode=self.mgl.TRIANGLES, vertices=nverts)
 
-        draw_channel(forest_fill, forest_fill_n, (True, False, False, False))
-        draw_channel(grass_fill, grass_fill_n, (False, True, False, False))
+        self.ctx.disable(self.mgl.BLEND)
+        _set_uniform(self.prog_veg_sdf_fill, "u_view", frame)
+        for vao, nverts, mask in fills:
+            draw_channel(vao, nverts, mask)
 
         used_min = False
         min_eq = getattr(self.mgl, "MIN", None)
@@ -469,17 +542,9 @@ class GLMapRenderer:
         _set_uniform(self.prog_veg_sdf, "u_view", frame)
         _set_uniform(self.prog_veg_sdf, "u_band_width", width)
         _set_uniform(self.prog_veg_sdf, "u_max", width)
+        for vao, nverts, mask in bands:
+            draw_channel(vao, nverts, mask)
 
-        draw_channel(
-            self._forest_sdf_vao,
-            self._forest_sdf_nverts,
-            (True, False, False, False),
-        )
-        draw_channel(
-            self._grass_sdf_vao,
-            self._grass_sdf_nverts,
-            (False, True, False, False),
-        )
         self.ctx.color_mask = True, True, True, True
         self.ctx.disable(self.mgl.BLEND)
         if used_min:
@@ -490,12 +555,50 @@ class GLMapRenderer:
         else:
             self.ctx.screen.use()
         fbo.release()
-        self._veg_tex = tex
+        return tex
+
+    def _bake_veg_sdf(self) -> None:
+        frame = _penghu_frame(self.world)
+        max_dim = 8192
+        try:
+            info = self.ctx.info or {}
+            hw = int(info.get("GL_MAX_TEXTURE_SIZE") or max_dim)
+            max_dim = max(256, min(max_dim, hw))
+        except Exception:
+            pass
+        size = _sdf_tex_size(frame, max_dim)
+        forest_fill, forest_fill_n = self._sdf_fill_vao("forest")
+        grass_fill, grass_fill_n = self._sdf_fill_vao("grass")
+        r_only = (True, False, False, False)
+        g_only = (False, True, False, False)
+        self._veg_tex = self._bake_sdf_rg(
+            size,
+            frame,
+            [
+                (forest_fill, forest_fill_n, r_only),
+                (grass_fill, grass_fill_n, g_only),
+            ],
+            [
+                (self._forest_sdf_vao, self._forest_sdf_nverts, r_only),
+                (self._grass_sdf_vao, self._grass_sdf_nverts, g_only),
+            ],
+        )
+        self._veg_mix_tex = self._bake_sdf_rg(
+            size,
+            frame,
+            [
+                (forest_fill, forest_fill_n, r_only),
+                (grass_fill, grass_fill_n, r_only),
+            ],
+            [
+                (self._veg_union_sdf_vao, self._veg_union_sdf_nverts, r_only),
+            ],
+        )
         self._veg_frame = frame
         self._veg_tex_size = size
         cell = (frame[2] - frame[0]) / max(size[0] - 1, 1)
         print(
-            f"GL veg SDF {size[0]}x{size[1]} ({cell:.1f} m/px)",
+            f"GL veg SDF {size[0]}x{size[1]} ({cell:.1f} m/px) + union mix",
             flush=True,
         )
 
@@ -511,12 +614,15 @@ class GLMapRenderer:
             self._sea_tex.use(0)
         if self._veg_tex is not None:
             self._veg_tex.use(1)
+        if self._veg_mix_tex is not None:
+            self._veg_mix_tex.use(2)
         fill = pal["forest"] if kind == 1 else pal["grass"]
         soil = pal["grass"]
         canopy = pal["forest"]
         land = pal["land"]
         _set_uniform(prog, "u_sea", 0)
         _set_uniform(prog, "u_vegf", 1)
+        _set_uniform(prog, "u_veg_mix", 2)
         _set_uniform(prog, "u_view", view)
         _set_uniform(prog, "u_sea_frame", self._sea_frame)
         _set_uniform(prog, "u_sea_max", SEA_MAX_DIST_M)
@@ -552,7 +658,8 @@ class GLMapRenderer:
         if mesh is None:
             return 0
         self.ctx.disable(self.mgl.BLEND)
-        self._bind_veg(self.prog_veg, kind, view, view_w, pal)
+        prog = self.prog_veg if kind == 1 else self.prog_veg_grass
+        self._bind_veg(prog, kind, view, view_w, pal)
         mesh.vao.render(mode=self.mgl.TRIANGLES, vertices=mesh.nverts)
         return mesh.features
 

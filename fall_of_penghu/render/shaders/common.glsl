@@ -15,13 +15,13 @@ float hash_i3(ivec3 p) {
 }
 
 float valnoise(vec2 p) {
-    vec2 i = floor(p);
+    ivec2 cell = ivec2(floor(p));
     vec2 f = fract(p);
     f = f * f * (3.0 - 2.0 * f);
-    float a = hash11(i);
-    float b = hash11(i + vec2(1.0, 0.0));
-    float c = hash11(i + vec2(0.0, 1.0));
-    float d = hash11(i + vec2(1.0, 1.0));
+    float a = hash_i3(ivec3(cell, 17));
+    float b = hash_i3(ivec3(cell + ivec2(1, 0), 17));
+    float c = hash_i3(ivec3(cell + ivec2(0, 1), 17));
+    float d = hash_i3(ivec3(cell + ivec2(1, 1), 17));
     return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
 }
 
@@ -43,4 +43,24 @@ float ripple_band(float pos, float width) {
 
 float noise_mask(vec2 p, float lo, float hi) {
     return smoothstep(lo, hi, valnoise(p));
+}
+
+vec3 land_soil_mix(
+    vec2 world,
+    float field,
+    vec3 soil,
+    vec3 land,
+    float mix_max,
+    float noise_scale,
+    float noise_amp
+) {
+    if (field >= mix_max) {
+        return soil;
+    }
+    vec2 p = world * noise_scale;
+    float n = valnoise(p);
+    n += valnoise(p * 2.0 + vec2(13.1, 4.7));
+    n += valnoise(p * 4.0 + vec2(7.2, 19.4));
+    n = clamp((n / 3.0 - 0.5) * noise_amp + 0.5, 0.0, 1.0);
+    return n < (field / mix_max) ? soil : land;
 }
