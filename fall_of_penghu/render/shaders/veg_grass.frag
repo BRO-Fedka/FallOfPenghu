@@ -123,9 +123,18 @@ void main() {
     }
 
     float field = mix_field(v_world);
-    vec3 soil = land_soil_mix(
-        v_world, field, u_soil, u_land, u_mix_max, u_mix_noise_scale, u_mix_noise_amp
+    bool keep_soil = veg_mix_is_soil(
+        v_world, field, u_mix_max, u_mix_noise_scale, u_mix_noise_amp, fill_a
     );
+    vec3 soil = u_soil;
+
+    if (!keep_soil) {
+        if (trees < 0.02) {
+            discard;
+        }
+        f_color = vec4(canopy, 1.0);
+        return;
+    }
 
     if (u_debug == 1) {
         vec3 col;

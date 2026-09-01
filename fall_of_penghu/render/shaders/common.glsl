@@ -36,6 +36,35 @@ float signed_noise(vec2 p) {
     return valnoise(p) * 2.0 - 1.0;
 }
 
+// Octave i is 1-based. Change this to retune urban-edge fBm weights.
+float urban_octave_weight(float x) {
+    return 1.0 / (x * x);
+}
+
+float urban_edge_noise(vec2 world, float noise_scale, int octaves) {
+    int n = octaves;
+    if (n < 1) {
+        n = 1;
+    }
+    if (n > 8) {
+        n = 8;
+    }
+    float sum = 0.0;
+    float wsum = 0.0;
+    float freq = noise_scale;
+    for (int i = 1; i <= 8; i++) {
+        if (i > n) {
+            break;
+        }
+        float w = urban_octave_weight(float(i));
+        vec2 p = world * freq + vec2(float(i) * 17.1, float(i) * 9.3);
+        sum += w * signed_noise(p);
+        wsum += w;
+        freq *= 2.0;
+    }
+    return sum / max(wsum, 1e-6);
+}
+
 float ripple_band(float pos, float width) {
     float d = abs(fract(pos) - 0.5);
     return 1.0 - smoothstep(0.0, max(width, 1e-4), d);
@@ -43,6 +72,30 @@ float ripple_band(float pos, float width) {
 
 float noise_mask(vec2 p, float lo, float hi) {
     return smoothstep(lo, hi, valnoise(p));
+}
+
+bool veg_mix_is_soil(
+    vec2 world,
+    float field,
+    float mix_max,
+    float noise_scale,
+    float noise_amp,
+    float lod_fill
+) {
+    if (lod_fill >= 0.997) {
+        return true;
+    }
+    if (field >= mix_max) {
+        return true;
+    }
+    vec2 p = world * noise_scale;
+    float n = valnoise(p);
+    n += valnoise(p * 2.0 + vec2(13.1, 4.7));
+    n += valnoise(p * 4.0 + vec2(7.2, 19.4));
+    n = clamp((n / 3.0 - 0.5) * noise_amp + 0.5, 0.0, 1.0);
+    float gate = field / mix_max;
+    gate = mix(gate, 1.01, clamp(lod_fill, 0.0, 1.0));
+    return n < gate;
 }
 
 vec3 land_soil_mix(
@@ -54,13 +107,5 @@ vec3 land_soil_mix(
     float noise_scale,
     float noise_amp
 ) {
-    if (field >= mix_max) {
-        return soil;
-    }
-    vec2 p = world * noise_scale;
-    float n = valnoise(p);
-    n += valnoise(p * 2.0 + vec2(13.1, 4.7));
-    n += valnoise(p * 4.0 + vec2(7.2, 19.4));
-    n = clamp((n / 3.0 - 0.5) * noise_amp + 0.5, 0.0, 1.0);
-    return n < (field / mix_max) ? soil : land;
+    return veg_mix_is_soil(world, field, mix_max, noise_scale, noise_amp, 0.0) ? soil : land;
 }

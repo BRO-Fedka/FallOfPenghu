@@ -89,6 +89,7 @@ class MapData:
     veg_grid: UniformGrid | None = None
     building_grid: UniformGrid | None = None
     road_grid: UniformGrid | None = None
+    map_dir: Path | None = None
 
 
 def _load_collection(path: Path) -> list[dict]:
@@ -136,7 +137,7 @@ def load_map(map_dir: Path) -> MapData:
     if manifest.get("coordinates") != "EPSG:3825_local_meters":
         raise ValueError("map coordinates must be EPSG:3825_local_meters")
 
-    world = MapData(manifest=manifest)
+    world = MapData(manifest=manifest, map_dir=map_dir)
 
     for feat in _load_collection(map_dir / "taiwan.geojson"):
         world.taiwan.extend(_polys_from_feature(feat))

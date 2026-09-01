@@ -11,6 +11,8 @@ from fall_of_penghu.mapdata import MapData
 from fall_of_penghu.render.geom import pack_xy, stroke_polyline, stroke_seaward_band, triangulate
 from fall_of_penghu.render.seafield import SEA_MAX_DIST_M, SEA_TEX_SIZE, build_sea_distance
 from fall_of_penghu.render.veg import VegParams
+from fall_of_penghu.render.urban import UrbanParams, RoadParams
+from fall_of_penghu.render.piers import PierParams
 from fall_of_penghu.render.vegfield import _penghu_frame
 from fall_of_penghu.render.water import WaterParams
 from fall_of_penghu.render.scene import (
@@ -30,6 +32,7 @@ FULLSCREEN_TRI = array("f", [-1.0, -1.0, 3.0, -1.0, -1.0, 3.0])
 MSAA_SAMPLES = 4
 MIN_ROAD_WIDTH_M = 2.0
 RADAR_OUTLINE_M = 8.0
+PIER_FIELD_NAME = "piers_field.npz"
 
 
 def _poly_groups(world: MapData):
@@ -164,6 +167,74 @@ def _band_chunks_for_poly(
     return chunks
 
 
+def _field_sample(
+    buf: array,
+    size: tuple[int, int],
+    frame: tuple[float, float, float, float],
+    x: float,
+    y: float,
+) -> float:
+    w, h = size
+    if w < 2 or h < 2 or not buf:
+        return 0.0
+    minx, miny, maxx, maxy = frame
+    fx = (x - minx) / max(maxx - minx, 1.0) * (w - 1)
+    fy = (y - miny) / max(maxy - miny, 1.0) * (h - 1)
+    x0 = int(max(0, min(w - 2, fx // 1)))
+    y0 = int(max(0, min(h - 2, fy // 1)))
+    tx = fx - x0
+    ty = fy - y0
+    i00 = y0 * w + x0
+    a = buf[i00] * (1.0 - tx) + buf[i00 + 1] * tx
+    b = buf[i00 + w] * (1.0 - tx) + buf[i00 + w + 1] * tx
+    return float(a * (1.0 - ty) + b * ty)
+
+
+def _house_miter_splat(
+    ring: list[tuple[float, float]], extent: float, peak: float, data: array
+) -> bool:
+    """Miter-buffer of the footprint: t=0 on the wall, t=1 at offset extent."""
+    if len(ring) >= 2 and ring[0] == ring[-1]:
+        ring = ring[:-1]
+    if len(ring) < 3:
+        return False
+    band = stroke_seaward_band(ring, extent, closed=True, landward_m=0.0)
+    if len(band) < 15:
+        return False
+    for i in range(0, len(band), 5):
+        data.extend((band[i], band[i + 1], band[i + 2], peak))
+    for x, y in triangulate(ring, None):
+        data.extend((x, y, 0.0, peak))
+    return True
+
+
+def _dots_on_polyline(
+    points: list[tuple[float, float]], step_m: float
+) -> list[tuple[float, float]]:
+    if len(points) < 2:
+        return list(points)
+    step = max(step_m, 4.0)
+    out: list[tuple[float, float]] = [points[0]]
+    remain = 0.0
+    for i in range(len(points) - 1):
+        ax, ay = points[i]
+        bx, by = points[i + 1]
+        dx = bx - ax
+        dy = by - ay
+        seg = (dx * dx + dy * dy) ** 0.5
+        if seg < 1e-4:
+            continue
+        pos = remain
+        while pos <= seg:
+            t = pos / seg
+            out.append((ax + dx * t, ay + dy * t))
+            pos += step
+        remain = pos - seg
+    if out[-1] != points[-1]:
+        out.append(points[-1])
+    return out
+
+
 def _sdf_tex_size(
     frame: tuple[float, float, float, float], max_dim: int
 ) -> tuple[int, int]:
@@ -205,13 +276,36 @@ class GLMapRenderer:
         self.layers: dict[str, StaticMesh] = {}
         self.water = WaterParams()
         self.veg = VegParams()
+        self.urban = UrbanParams()
+        self.road_params = RoadParams()
+        self.pier_params = PierParams()
         self.prog_map = ctx.program(
             vertex_shader=_shader("map.vert"),
             fragment_shader=_shader("map.frag"),
         )
+        self.prog_land = ctx.program(
+            vertex_shader=_shader("veg.vert"),
+            fragment_shader=_shader("land.frag"),
+        )
+        self.prog_urban_splat = ctx.program(
+            vertex_shader=_shader("urban_splat.vert"),
+            fragment_shader=_shader("urban_splat.frag"),
+        )
+        self.prog_road_splat = ctx.program(
+            vertex_shader=_shader("road_splat.vert"),
+            fragment_shader=_shader("road_splat.frag"),
+        )
+        self.prog_urban_overlay = ctx.program(
+            vertex_shader=_shader("veg.vert"),
+            fragment_shader=_shader("urban_overlay.frag"),
+        )
         self.prog_post = ctx.program(
             vertex_shader=_shader("post.vert"),
             fragment_shader=_shader("post.frag"),
+        )
+        self.prog_field_add = ctx.program(
+            vertex_shader=_shader("post.vert"),
+            fragment_shader=_shader("field_add.frag"),
         )
         self.prog_overlay = ctx.program(
             vertex_shader=_shader("overlay.vert"),
@@ -254,6 +348,10 @@ class GLMapRenderer:
         self._veg_mix_tex = None
         self._veg_frame = (-22_000.0, -32_000.0, 21_000.0, 35_000.0)
         self._veg_tex_size = (2, 2)
+        self._land_tex = None
+        self._land_frame = (-22_000.0, -32_000.0, 21_000.0, 35_000.0)
+        self._land_sdf_vao = None
+        self._land_sdf_nverts = 0
         self._veg_union_sdf_vao = None
         self._veg_union_sdf_nverts = 0
         self._forest_sdf_vao = None
@@ -262,6 +360,22 @@ class GLMapRenderer:
         self._grass_sdf_nverts = 0
         self._upload_veg_bands()
         self._bake_veg_sdf()
+        self._upload_land_bands()
+        self._bake_land_sdf()
+        self._urban_tex = None
+        self._road_tex = None
+        self._road_buf: array | None = None
+        self._urban_overlay_vao = None
+        self._urban_overlay_nverts = 0
+        self._pier_tex = None
+        self._pier_n = 0
+        self._field_add_vbo = ctx.buffer(FULLSCREEN_TRI.tobytes())
+        self._field_add_vao = ctx.vertex_array(
+            self.prog_field_add, [(self._field_add_vbo, "2f", "in_pos")]
+        )
+        self._load_pier_field()
+        self._bake_road_field()
+        self._bake_urban_field()
         self._post_vbo = ctx.buffer(FULLSCREEN_TRI.tobytes())
         self._post_vao = ctx.vertex_array(self.prog_post, [(self._post_vbo, "2f", "in_pos")])
         self._sea_vao = ctx.vertex_array(self.prog_sea, [(self._post_vbo, "2f", "in_pos")])
@@ -389,7 +503,7 @@ class GLMapRenderer:
 
         specs = {
             "taiwan": (taiwan, n_taiwan, self.prog_map),
-            "coast": (coast, n_coast, self.prog_map),
+            "coast": (coast, n_coast, self.prog_land),
             "forest": (forest, n_forest, self.prog_veg),
             "grass": (grass, n_grass, self.prog_veg_grass),
             "buildings": (buildings, n_buildings, self.prog_map),
@@ -602,6 +716,366 @@ class GLMapRenderer:
             flush=True,
         )
 
+    def _upload_land_bands(self) -> None:
+        width = max(self.veg.band_width_m, 8.0)
+        chunks: list[array] = []
+        n_parts = 0
+        for feat in self.world.coast:
+            part = _band_chunks_for_poly(feat.exterior, feat.holes or [], width)
+            if part:
+                n_parts += 1
+            chunks.extend(part)
+        data = _concat(chunks)
+        if len(data) < 15:
+            self._land_sdf_vao = None
+            self._land_sdf_nverts = 0
+            return
+        vbo = self.ctx.buffer(data.tobytes())
+        self._land_sdf_nverts = len(data) // 5
+        self._land_sdf_vao = self.ctx.vertex_array(
+            self.prog_veg_sdf, [(vbo, "2f 1f 2x4", "in_pos", "in_t")]
+        )
+        print(
+            f"GL land bands: {self._land_sdf_nverts} verts / {n_parts}",
+            flush=True,
+        )
+
+    def _bake_land_sdf(self) -> None:
+        frame = _penghu_frame(self.world)
+        max_dim = 8192
+        try:
+            info = self.ctx.info or {}
+            hw = int(info.get("GL_MAX_TEXTURE_SIZE") or max_dim)
+            max_dim = max(256, min(max_dim, hw))
+        except Exception:
+            pass
+        size = _sdf_tex_size(frame, max_dim)
+        coast_fill, coast_fill_n = self._sdf_fill_vao("coast")
+        r_only = (True, False, False, False)
+        self._land_tex = self._bake_sdf_rg(
+            size,
+            frame,
+            [(coast_fill, coast_fill_n, r_only)],
+            [(self._land_sdf_vao, self._land_sdf_nverts, r_only)],
+        )
+        self._land_frame = frame
+        cell = (frame[2] - frame[0]) / max(size[0] - 1, 1)
+        print(
+            f"GL land SDF {size[0]}x{size[1]} ({cell:.1f} m/px)",
+            flush=True,
+        )
+
+    def _draw_land(
+        self,
+        view: tuple[float, float, float, float],
+        pal: dict[str, tuple[int, int, int]],
+    ) -> int:
+        mesh = self.layers.get("coast")
+        if mesh is None:
+            return 0
+        self.ctx.disable(self.mgl.BLEND)
+        if self._land_tex is not None:
+            self._land_tex.use(3)
+        if self._urban_tex is not None:
+            self._urban_tex.use(4)
+        land = pal["land"]
+        rock = pal.get("rock") or land
+        concrete = pal.get("concrete") or (148, 144, 138)
+        prog = self.prog_land
+        _set_uniform(prog, "u_view", view)
+        _set_uniform(prog, "u_land_frame", self._land_frame)
+        _set_uniform(prog, "u_landf", 3)
+        _set_uniform(prog, "u_urban", 4)
+        _set_uniform(prog, "u_land", (land[0] / 255.0, land[1] / 255.0, land[2] / 255.0))
+        _set_uniform(prog, "u_rock", (rock[0] / 255.0, rock[1] / 255.0, rock[2] / 255.0))
+        _set_uniform(
+            prog,
+            "u_concrete",
+            (concrete[0] / 255.0, concrete[1] / 255.0, concrete[2] / 255.0),
+        )
+        _set_uniform(prog, "u_radar", 1 if self.radar else 0)
+        self.urban.bind(_set_uniform, prog)
+        self.veg.bind(_set_uniform, prog)
+        mesh.vao.render(mode=self.mgl.TRIANGLES, vertices=mesh.nverts)
+        return mesh.features
+
+    def _make_float_tex(self, size: tuple[int, int]):
+        tex = self.ctx.texture(size, 1, dtype="f4")
+        tex.filter = (self.mgl.LINEAR, self.mgl.LINEAR)
+        tex.repeat_x = False
+        tex.repeat_y = False
+        return tex
+
+    def _begin_additive_splat(self, tex, size: tuple[int, int]):
+        fbo = self.ctx.framebuffer(color_attachments=[tex])
+        prev = self.ctx.fbo
+        fbo.use()
+        self.ctx.viewport = (0, 0, size[0], size[1])
+        self.ctx.disable(self.mgl.DEPTH_TEST)
+        self.ctx.disable(self.mgl.CULL_FACE)
+        self.ctx.clear(0.0, 0.0, 0.0, 1.0)
+        self.ctx.enable(self.mgl.BLEND)
+        self.ctx.blend_equation = self.mgl.FUNC_ADD
+        self.ctx.blend_func = self.mgl.ONE, self.mgl.ONE
+        return fbo, prev
+
+    def _end_additive_splat(self, fbo, prev) -> None:
+        self.ctx.disable(self.mgl.BLEND)
+        self.ctx.blend_func = self.mgl.SRC_ALPHA, self.mgl.ONE_MINUS_SRC_ALPHA
+        if prev is not None:
+            prev.use()
+        else:
+            self.ctx.screen.use()
+        fbo.release()
+
+    def _ensure_urban_overlay(self) -> None:
+        if self._urban_overlay_vao is not None:
+            return
+        coast = self.layers.get("coast")
+        if coast is not None and coast.vbo is not None:
+            self._urban_overlay_vao = self.ctx.vertex_array(
+                self.prog_urban_overlay, [(coast.vbo, "2f", "in_pos")]
+            )
+            self._urban_overlay_nverts = coast.nverts
+        else:
+            self._urban_overlay_vao = None
+            self._urban_overlay_nverts = 0
+
+    def _bake_road_field(self) -> None:
+        frame = self._land_frame
+        size = self._veg_tex_size
+        rp = self.road_params
+        sigma = max(rp.sigma_m, 1.0)
+        half = sigma * max(rp.splat_sigmas, 1.0)
+        ref = max(rp.width_ref_m, 1.0)
+        data = array("f")
+        n_pts = 0
+        minx, miny, maxx, maxy = frame
+        for feat in self.world.roads:
+            width = max(float(feat.width_m), MIN_ROAD_WIDTH_M)
+            peak = float(rp.peak) * (width / ref)
+            if peak <= 0.0:
+                continue
+            for px, py in _dots_on_polyline(feat.points, rp.step_m):
+                if (
+                    px < minx - half
+                    or px > maxx + half
+                    or py < miny - half
+                    or py > maxy + half
+                ):
+                    continue
+                x0 = px - half
+                y0 = py - half
+                x1 = px + half
+                y1 = py + half
+                data.extend(
+                    (
+                        x0, y0, px, py, peak,
+                        x1, y0, px, py, peak,
+                        x1, y1, px, py, peak,
+                        x0, y0, px, py, peak,
+                        x1, y1, px, py, peak,
+                        x0, y1, px, py, peak,
+                    )
+                )
+                n_pts += 1
+        tex = self._make_float_tex(size)
+        fbo, prev = self._begin_additive_splat(tex, size)
+        if n_pts > 0 and len(data) >= 15:
+            _set_uniform(self.prog_road_splat, "u_view", frame)
+            _set_uniform(self.prog_road_splat, "u_urban_sigma", sigma)
+            _set_uniform(self.prog_road_splat, "u_urban_kernel", int(rp.kernel))
+            vbo = self.ctx.buffer(data.tobytes())
+            vao = self.ctx.vertex_array(
+                self.prog_road_splat,
+                [(vbo, "2f 2f 1f", "in_pos", "in_center", "in_peak")],
+            )
+            vao.render(mode=self.mgl.TRIANGLES, vertices=len(data) // 5)
+            vao.release()
+            vbo.release()
+        self._end_additive_splat(fbo, prev)
+        raw = tex.read()
+        buf = array("f")
+        buf.frombytes(raw)
+        expected = size[0] * size[1]
+        if len(buf) != expected:
+            print(
+                f"GL road field: read {len(buf)} floats, expected {expected}",
+                flush=True,
+            )
+            buf = None
+        if self._road_tex is not None:
+            self._road_tex.release()
+        self._road_tex = tex
+        self._road_buf = buf
+        self._ensure_urban_overlay()
+        print(
+            f"GL road field: {n_pts} samples  sigma {sigma:.0f} m  "
+            f"kernel {rp.kernel}",
+            flush=True,
+        )
+
+    def _pier_field_path(self) -> Path | None:
+        layers = self.world.manifest.get("layers") or {}
+        spec = layers.get("piers") or {}
+        name = spec.get("file") or PIER_FIELD_NAME
+        map_dir = self.world.map_dir
+        if map_dir is None:
+            return None
+        path = Path(map_dir) / name
+        return path if path.is_file() else None
+
+    def _load_pier_field(self) -> None:
+        if self._pier_tex is not None:
+            self._pier_tex.release()
+            self._pier_tex = None
+        self._pier_n = 0
+        path = self._pier_field_path()
+        if path is None:
+            print(
+                "GL piers: no piers_field.npz — run python -m fall_of_penghu.pier_prep",
+                flush=True,
+            )
+            return
+        import numpy as np
+
+        try:
+            data = np.load(path)
+            mask = np.ascontiguousarray(data["mask"])
+            stamp = float(
+                data["stamp_value"] if "stamp_value" in data else self.pier_params.stamp_value
+            )
+            n_rings = int(data["n_rings"]) if "n_rings" in data else 0
+        except Exception as exc:
+            print(f"GL piers: failed to load {path.name}: {exc}", flush=True)
+            return
+        field = np.ascontiguousarray(mask.astype(np.float32) * stamp)
+        height, width = field.shape
+        tex = self._make_float_tex((width, height))
+        tex.write(field.tobytes())
+        self._pier_tex = tex
+        self._pier_n = n_rings
+        print(
+            f"GL piers: loaded {path.name}  {width}x{height}  rings {n_rings}",
+            flush=True,
+        )
+
+    def _blit_pier_field(self) -> None:
+        if self._pier_tex is None:
+            return
+        self._pier_tex.use(0)
+        _set_uniform(self.prog_field_add, "u_src", 0)
+        self._field_add_vao.render(mode=self.mgl.TRIANGLES, vertices=3)
+
+    def _bake_urban_field(self) -> None:
+        frame = self._land_frame
+        size = self._veg_tex_size
+        sigma = max(self.urban.sigma_m, 1.0)
+        half = sigma * max(self.urban.splat_sigmas, 1.0)
+        data = array("f")
+        n_b = 0
+        minx, miny, maxx, maxy = frame
+        ref = max(self.urban.size_ref_m, 1.0)
+        base_peak = float(self.urban.peak)
+        influence = float(self.road_params.influence)
+        road_buf = self._road_buf
+        for feat in self.world.buildings:
+            cx = 0.5 * (feat.bbox[0] + feat.bbox[2])
+            cy = 0.5 * (feat.bbox[1] + feat.bbox[3])
+            if cx < minx - half or cx > maxx + half or cy < miny - half or cy > maxy + half:
+                continue
+            bw = max(feat.bbox[2] - feat.bbox[0], 1.0)
+            bh = max(feat.bbox[3] - feat.bbox[1], 1.0)
+            house_size = 0.5 * (bw * bw + bh * bh)
+            house_peak = base_peak * (house_size / ref)
+            if influence != 0.0 and road_buf:
+                road = _field_sample(road_buf, size, frame, cx, cy)
+                density = max(road, 0.0) * max(self.road_params.gain, 0.0)
+                house_peak *= 1.0 + influence * density
+            if (
+                feat.bbox[2] < minx - half
+                or feat.bbox[0] > maxx + half
+                or feat.bbox[3] < miny - half
+                or feat.bbox[1] > maxy + half
+            ):
+                continue
+            if _house_miter_splat(feat.exterior, half, house_peak, data):
+                n_b += 1
+        has_piers = self._pier_tex is not None
+        if (n_b <= 0 or len(data) < 12) and not has_piers:
+            if self._urban_tex is not None:
+                self._urban_tex.release()
+            self._urban_tex = None
+            self._ensure_urban_overlay()
+            print("GL urban field: no buildings", flush=True)
+            return
+        tex = self._make_float_tex(size)
+        fbo, prev = self._begin_additive_splat(tex, size)
+        _set_uniform(self.prog_urban_splat, "u_view", frame)
+        _set_uniform(self.prog_urban_splat, "u_urban_sigma", sigma)
+        _set_uniform(self.prog_urban_splat, "u_urban_extent", half)
+        _set_uniform(self.prog_urban_splat, "u_urban_kernel", int(self.urban.kernel))
+        if n_b > 0 and len(data) >= 12:
+            vbo = self.ctx.buffer(data.tobytes())
+            vao = self.ctx.vertex_array(
+                self.prog_urban_splat, [(vbo, "2f 1f 1f", "in_pos", "in_t", "in_peak")]
+            )
+            vao.render(mode=self.mgl.TRIANGLES, vertices=len(data) // 4)
+            vao.release()
+            vbo.release()
+        self._blit_pier_field()
+        self._end_additive_splat(fbo, prev)
+        if self._pier_tex is not None:
+            self._pier_tex.release()
+            self._pier_tex = None
+        if self._urban_tex is not None:
+            self._urban_tex.release()
+        self._urban_tex = tex
+        self._ensure_urban_overlay()
+        print(
+            f"GL urban field: {n_b} buildings  sigma {sigma:.0f} m  "
+            f"roadInf {influence:.4f}  piers {self._pier_n}",
+            flush=True,
+        )
+
+    def _draw_field_overlay(
+        self,
+        view: tuple[float, float, float, float],
+        tex,
+        params,
+        rgb: tuple[float, float, float],
+    ) -> None:
+        if tex is None or self._urban_overlay_vao is None:
+            return
+        tex.use(4)
+        prog = self.prog_urban_overlay
+        _set_uniform(prog, "u_view", view)
+        _set_uniform(prog, "u_land_frame", self._land_frame)
+        _set_uniform(prog, "u_urban", 4)
+        _set_uniform(prog, "u_overlay_rgb", rgb)
+        params.bind(_set_uniform, prog)
+        self._urban_overlay_vao.render(
+            mode=self.mgl.TRIANGLES, vertices=self._urban_overlay_nverts
+        )
+
+    def _draw_urban_debug(
+        self, view: tuple[float, float, float, float]
+    ) -> None:
+        if not self.debug_veg or self.radar or self._urban_overlay_vao is None:
+            return
+        self.ctx.enable(self.mgl.BLEND)
+        self.ctx.blend_func = self.mgl.SRC_ALPHA, self.mgl.ONE_MINUS_SRC_ALPHA
+        self._draw_field_overlay(
+            view, self._road_tex, self.road_params, (0.12, 0.92, 0.22)
+        )
+        self._draw_field_overlay(
+            view, self._urban_tex, self.urban, (0.2, 0.5, 1.0)
+        )
+        self.ctx.disable(self.mgl.BLEND)
+
+    def _urban_hud(self) -> str:
+        return f"{self.urban.label()}  {self.road_params.label()}"
+
     def _bind_veg(
         self,
         prog,
@@ -793,9 +1267,10 @@ class GLMapRenderer:
         _set_uniform(self.prog_map, "u_opacity", 1.0)
 
         stats["taiwan"] = self._draw_mesh("taiwan", pal["taiwan"])
-        stats["coast"] = self._draw_mesh("coast", pal["land"])
+        stats["coast"] = self._draw_land(view, pal)
         stats["vegetation"] += self._draw_veg("forest", 1, view, view_w, pal)
         stats["vegetation"] += self._draw_veg("grass", 0, view, view_w, pal)
+        self._draw_urban_debug(view)
         self._draw_shore(view, view_w)
 
         road_a = layer_opacity(view_w, ROADS_FADE_FULL_M, ROADS_FADE_GONE_M)

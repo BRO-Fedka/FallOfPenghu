@@ -72,6 +72,14 @@
         "RCCM",
         "RCWA"
       ]
+    },
+    "piers": {
+      "file": "piers_field.npz",
+      "width": 5221,
+      "height": 8192,
+      "rings": 135,
+      "pixels": 12610,
+      "stamp_value": 1100.0
     }
   },
   "excluded": [
