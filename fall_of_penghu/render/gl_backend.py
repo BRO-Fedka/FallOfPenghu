@@ -10,9 +10,9 @@ from fall_of_penghu.camera import Camera
 from fall_of_penghu.mapdata import MapData
 from fall_of_penghu.render.geom import pack_xy, stroke_polyline, stroke_seaward_band, triangulate
 from fall_of_penghu.render.seafield import SEA_MAX_DIST_M, SEA_TEX_SIZE, build_sea_distance
-from fall_of_penghu.render.veg import VegParams
+from fall_of_penghu.render.veg import VEG_DETAIL_CROWNS, VegParams
 from fall_of_penghu.render.urban import UrbanParams, RoadParams
-from fall_of_penghu.render.piers import PierParams
+from fall_of_penghu.render.pier_params import PierParams
 from fall_of_penghu.render.vegfield import _penghu_frame
 from fall_of_penghu.render.water import WaterParams
 from fall_of_penghu.render.scene import (
@@ -33,6 +33,8 @@ MSAA_SAMPLES = 4
 MIN_ROAD_WIDTH_M = 2.0
 RADAR_OUTLINE_M = 8.0
 PIER_FIELD_NAME = "piers_field.npz"
+FIELD_CACHE_NAME = "gl_fields_v1.npz"
+SDF_TEX_MAX_DIM = 8192
 
 
 def _poly_groups(world: MapData):
@@ -247,6 +249,63 @@ def _sdf_tex_size(
     return width, height
 
 
+def _clamped_sdf_max_dim(ctx) -> int:
+    max_dim = SDF_TEX_MAX_DIM
+    try:
+        info = ctx.info or {}
+        hw = int(info.get("GL_MAX_TEXTURE_SIZE") or max_dim)
+        max_dim = max(256, min(max_dim, hw))
+    except Exception:
+        pass
+    return max_dim
+
+
+def _field_cache_key(
+    world: MapData,
+    veg: VegParams,
+    urban: UrbanParams,
+    roads: RoadParams,
+    piers: PierParams,
+    field_dtype: str,
+) -> str:
+    layers = world.manifest.get("layers") or {}
+    veg_layer = layers.get("vegetation") or {}
+    pier_layer = layers.get("piers") or {}
+    return "|".join(
+        (
+            str(world.manifest.get("content_version")),
+            str(veg_layer.get("hash")),
+            str(len(world.taiwan)),
+            str(len(world.coast)),
+            str(len(world.vegetation)),
+            str(len(world.buildings)),
+            str(len(world.roads)),
+            str(len(world.airports)),
+            str(SDF_TEX_MAX_DIM),
+            str(int(VEG_DETAIL_CROWNS)),
+            field_dtype,
+            str(veg.band_width_m),
+            str(urban.kernel),
+            str(urban.sigma_m),
+            str(urban.peak),
+            str(urban.size_ref_m),
+            str(urban.splat_sigmas),
+            str(roads.kernel),
+            str(roads.sigma_m),
+            str(roads.peak),
+            str(roads.width_ref_m),
+            str(roads.splat_sigmas),
+            str(roads.step_m),
+            str(roads.gain),
+            str(roads.influence),
+            str(piers.stamp_value),
+            str(pier_layer.get("rings")),
+            str(pier_layer.get("pixels")),
+            str(pier_layer.get("stamp_value")),
+        )
+    )
+
+
 @dataclass
 class StaticMesh:
     vao: object
@@ -267,11 +326,9 @@ class GLMapRenderer:
         self.world = world
         self.ctx = ctx
         self.radar = False
-        self.debug_veg = False
         self.last_stats: dict[str, int] = {}
         self._size = (max(1, size[0]), max(1, size[1]))
         self._t0 = perf_counter()
-        self._post_frag_override: str | None = None
         self._cpu_meshes: dict[int, array] = {}
         self.layers: dict[str, StaticMesh] = {}
         self.water = WaterParams()
@@ -295,10 +352,6 @@ class GLMapRenderer:
             vertex_shader=_shader("road_splat.vert"),
             fragment_shader=_shader("road_splat.frag"),
         )
-        self.prog_urban_overlay = ctx.program(
-            vertex_shader=_shader("veg.vert"),
-            fragment_shader=_shader("urban_overlay.frag"),
-        )
         self.prog_post = ctx.program(
             vertex_shader=_shader("post.vert"),
             fragment_shader=_shader("post.frag"),
@@ -319,14 +372,17 @@ class GLMapRenderer:
             vertex_shader=_shader("shore.vert"),
             fragment_shader=_shader("shore.frag"),
         )
-        self.prog_veg = ctx.program(
-            vertex_shader=_shader("veg.vert"),
-            fragment_shader=_shader("veg.frag"),
-        )
-        self.prog_veg_grass = ctx.program(
-            vertex_shader=_shader("veg.vert"),
-            fragment_shader=_shader("veg_grass.frag"),
-        )
+        self.prog_veg = None
+        self.prog_veg_grass = None
+        if VEG_DETAIL_CROWNS:
+            self.prog_veg = ctx.program(
+                vertex_shader=_shader("veg.vert"),
+                fragment_shader=_shader("veg.frag"),
+            )
+            self.prog_veg_grass = ctx.program(
+                vertex_shader=_shader("veg.vert"),
+                fragment_shader=_shader("veg_grass.frag"),
+            )
         self.prog_veg_sdf = ctx.program(
             vertex_shader=_shader("veg_sdf.vert"),
             fragment_shader=_shader("veg_sdf.frag"),
@@ -358,24 +414,17 @@ class GLMapRenderer:
         self._forest_sdf_nverts = 0
         self._grass_sdf_vao = None
         self._grass_sdf_nverts = 0
-        self._upload_veg_bands()
-        self._bake_veg_sdf()
-        self._upload_land_bands()
-        self._bake_land_sdf()
         self._urban_tex = None
         self._road_tex = None
         self._road_buf: array | None = None
-        self._urban_overlay_vao = None
-        self._urban_overlay_nverts = 0
         self._pier_tex = None
         self._pier_n = 0
+        self._field_dtype = "f4"
         self._field_add_vbo = ctx.buffer(FULLSCREEN_TRI.tobytes())
         self._field_add_vao = ctx.vertex_array(
             self.prog_field_add, [(self._field_add_vbo, "2f", "in_pos")]
         )
-        self._load_pier_field()
-        self._bake_road_field()
-        self._bake_urban_field()
+        self._init_fields()
         self._post_vbo = ctx.buffer(FULLSCREEN_TRI.tobytes())
         self._post_vao = ctx.vertex_array(self.prog_post, [(self._post_vbo, "2f", "in_pos")])
         self._sea_vao = ctx.vertex_array(self.prog_sea, [(self._post_vbo, "2f", "in_pos")])
@@ -501,11 +550,13 @@ class GLMapRenderer:
                 n_outline += 1
         coast_outline = _concat(outline_chunks)
 
+        forest_prog = self.prog_veg if VEG_DETAIL_CROWNS else self.prog_map
+        grass_prog = self.prog_veg_grass if VEG_DETAIL_CROWNS else self.prog_map
         specs = {
             "taiwan": (taiwan, n_taiwan, self.prog_map),
             "coast": (coast, n_coast, self.prog_land),
-            "forest": (forest, n_forest, self.prog_veg),
-            "grass": (grass, n_grass, self.prog_veg_grass),
+            "forest": (forest, n_forest, forest_prog),
+            "grass": (grass, n_grass, grass_prog),
             "buildings": (buildings, n_buildings, self.prog_map),
             "airports": (airports, n_airports, self.prog_map),
             "roads": (roads, n_roads, self.prog_map),
@@ -673,14 +724,7 @@ class GLMapRenderer:
 
     def _bake_veg_sdf(self) -> None:
         frame = _penghu_frame(self.world)
-        max_dim = 8192
-        try:
-            info = self.ctx.info or {}
-            hw = int(info.get("GL_MAX_TEXTURE_SIZE") or max_dim)
-            max_dim = max(256, min(max_dim, hw))
-        except Exception:
-            pass
-        size = _sdf_tex_size(frame, max_dim)
+        size = _sdf_tex_size(frame, _clamped_sdf_max_dim(self.ctx))
         forest_fill, forest_fill_n = self._sdf_fill_vao("forest")
         grass_fill, grass_fill_n = self._sdf_fill_vao("grass")
         r_only = (True, False, False, False)
@@ -742,14 +786,7 @@ class GLMapRenderer:
 
     def _bake_land_sdf(self) -> None:
         frame = _penghu_frame(self.world)
-        max_dim = 8192
-        try:
-            info = self.ctx.info or {}
-            hw = int(info.get("GL_MAX_TEXTURE_SIZE") or max_dim)
-            max_dim = max(256, min(max_dim, hw))
-        except Exception:
-            pass
-        size = _sdf_tex_size(frame, max_dim)
+        size = _sdf_tex_size(frame, _clamped_sdf_max_dim(self.ctx))
         coast_fill, coast_fill_n = self._sdf_fill_vao("coast")
         r_only = (True, False, False, False)
         self._land_tex = self._bake_sdf_rg(
@@ -759,6 +796,7 @@ class GLMapRenderer:
             [(self._land_sdf_vao, self._land_sdf_nverts, r_only)],
         )
         self._land_frame = frame
+        self._veg_tex_size = size
         cell = (frame[2] - frame[0]) / max(size[0] - 1, 1)
         print(
             f"GL land SDF {size[0]}x{size[1]} ({cell:.1f} m/px)",
@@ -799,8 +837,33 @@ class GLMapRenderer:
         mesh.vao.render(mode=self.mgl.TRIANGLES, vertices=mesh.nverts)
         return mesh.features
 
+    def _probe_field_dtype(self) -> str:
+        prev = self.ctx.fbo
+        tex = None
+        fbo = None
+        try:
+            tex = self.ctx.texture((2, 2), 1, dtype="f2")
+            fbo = self.ctx.framebuffer(color_attachments=[tex])
+            fbo.use()
+            self.ctx.clear(0.0, 0.0, 0.0, 1.0)
+            return "f2"
+        except Exception:
+            return "f4"
+        finally:
+            if fbo is not None:
+                fbo.release()
+            if tex is not None:
+                tex.release()
+            if prev is not None:
+                prev.use()
+            else:
+                try:
+                    self.ctx.screen.use()
+                except Exception:
+                    pass
+
     def _make_float_tex(self, size: tuple[int, int]):
-        tex = self.ctx.texture(size, 1, dtype="f4")
+        tex = self.ctx.texture(size, 1, dtype=self._field_dtype)
         tex.filter = (self.mgl.LINEAR, self.mgl.LINEAR)
         tex.repeat_x = False
         tex.repeat_y = False
@@ -828,18 +891,158 @@ class GLMapRenderer:
             self.ctx.screen.use()
         fbo.release()
 
-    def _ensure_urban_overlay(self) -> None:
-        if self._urban_overlay_vao is not None:
+    def _init_fields(self) -> None:
+        self._field_dtype = self._probe_field_dtype()
+        print(f"GL field dtype: {self._field_dtype}", flush=True)
+        if self._load_field_cache():
             return
-        coast = self.layers.get("coast")
-        if coast is not None and coast.vbo is not None:
-            self._urban_overlay_vao = self.ctx.vertex_array(
-                self.prog_urban_overlay, [(coast.vbo, "2f", "in_pos")]
+        self._bake_fields()
+        self._save_field_cache()
+
+    def _bake_fields(self) -> None:
+        if VEG_DETAIL_CROWNS:
+            self._upload_veg_bands()
+            self._bake_veg_sdf()
+        self._upload_land_bands()
+        self._bake_land_sdf()
+        self._load_pier_field()
+        self._bake_road_field()
+        self._bake_urban_field()
+        self._release_road_field()
+
+    def _release_road_field(self) -> None:
+        if self._road_tex is not None:
+            self._road_tex.release()
+            self._road_tex = None
+        self._road_buf = None
+
+    def _upload_rg8(self, size: tuple[int, int], pixels) -> object:
+        tex = self.ctx.texture(size, 2, data=pixels)
+        tex.filter = (self.mgl.LINEAR, self.mgl.LINEAR)
+        tex.repeat_x = False
+        tex.repeat_y = False
+        return tex
+
+    def _read_rg8(self, tex) -> object:
+        import numpy as np
+
+        w, h = tex.size
+        data = np.frombuffer(tex.read(), dtype=np.uint8)
+        return np.ascontiguousarray(data.reshape(h, w, 2))
+
+    def _read_urban_array(self, tex) -> object:
+        import numpy as np
+
+        w, h = tex.size
+        np_dtype = np.float16 if self._field_dtype == "f2" else np.float32
+        data = np.frombuffer(tex.read(), dtype=np_dtype)
+        return np.ascontiguousarray(data.reshape(h, w))
+
+    def _field_cache_path(self) -> Path | None:
+        layers = self.world.manifest.get("layers") or {}
+        spec = layers.get("gl_fields") or {}
+        name = spec.get("file") or FIELD_CACHE_NAME
+        map_dir = self.world.map_dir
+        if map_dir is None:
+            return None
+        return Path(map_dir) / name
+
+    def _load_field_cache(self) -> bool:
+        import numpy as np
+
+        path = self._field_cache_path()
+        if path is None or not path.is_file():
+            return False
+        key = _field_cache_key(
+            self.world,
+            self.veg,
+            self.urban,
+            self.road_params,
+            self.pier_params,
+            self._field_dtype,
+        )
+        try:
+            data = np.load(path)
+            saved = np.asarray(data["key"]).reshape(-1)
+            saved_key = bytes(saved.astype(np.uint8)).decode("utf-8")
+            if saved_key != key:
+                return False
+            if "land" not in data or "frame" not in data:
+                return False
+            if VEG_DETAIL_CROWNS and ("veg" not in data or "veg_mix" not in data):
+                return False
+            frame = tuple(float(v) for v in data["frame"])
+            width, height = (int(data["width"]), int(data["height"]))
+            size = (width, height)
+            land = np.ascontiguousarray(data["land"])
+            veg = mix = urban = None
+            if VEG_DETAIL_CROWNS:
+                veg = np.ascontiguousarray(data["veg"])
+                mix = np.ascontiguousarray(data["veg_mix"])
+            if "urban" in data:
+                urban = np.ascontiguousarray(data["urban"])
+            self._land_tex = self._upload_rg8(size, land.tobytes())
+            self._land_frame = frame
+            self._veg_frame = frame
+            self._veg_tex_size = size
+            if veg is not None and mix is not None:
+                self._veg_tex = self._upload_rg8(size, veg.tobytes())
+                self._veg_mix_tex = self._upload_rg8(size, mix.tobytes())
+            if urban is not None:
+                if urban.dtype == np.float16 and self._field_dtype != "f2":
+                    urban = np.ascontiguousarray(urban.astype(np.float32))
+                    dtype = "f4"
+                elif urban.dtype == np.float32 and self._field_dtype == "f2":
+                    urban = np.ascontiguousarray(urban.astype(np.float16))
+                    dtype = "f2"
+                else:
+                    dtype = "f2" if urban.dtype == np.float16 else "f4"
+                tex = self.ctx.texture(size, 1, data=urban.tobytes(), dtype=dtype)
+                tex.filter = (self.mgl.LINEAR, self.mgl.LINEAR)
+                tex.repeat_x = False
+                tex.repeat_y = False
+                self._urban_tex = tex
+            print(
+                f"GL fields cache hit {width}x{height}  crowns {VEG_DETAIL_CROWNS}",
+                flush=True,
             )
-            self._urban_overlay_nverts = coast.nverts
-        else:
-            self._urban_overlay_vao = None
-            self._urban_overlay_nverts = 0
+            return True
+        except Exception as exc:
+            print(f"GL fields cache miss ({exc})", flush=True)
+            return False
+
+    def _save_field_cache(self) -> None:
+        import numpy as np
+
+        if self._land_tex is None:
+            return
+        path = self._field_cache_path()
+        if path is None:
+            return
+        key = _field_cache_key(
+            self.world,
+            self.veg,
+            self.urban,
+            self.road_params,
+            self.pier_params,
+            self._field_dtype,
+        )
+        width, height = self._veg_tex_size
+        payload = {
+            "key": np.frombuffer(key.encode("utf-8"), dtype=np.uint8).copy(),
+            "frame": np.asarray(self._land_frame, dtype=np.float64),
+            "width": np.int32(width),
+            "height": np.int32(height),
+            "land": self._read_rg8(self._land_tex),
+        }
+        if VEG_DETAIL_CROWNS and self._veg_tex is not None and self._veg_mix_tex is not None:
+            payload["veg"] = self._read_rg8(self._veg_tex)
+            payload["veg_mix"] = self._read_rg8(self._veg_mix_tex)
+        if self._urban_tex is not None:
+            payload["urban"] = self._read_urban_array(self._urban_tex)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        np.savez_compressed(path, **payload)
+        print(f"GL fields cache wrote {path.name}", flush=True)
 
     def _bake_road_field(self) -> None:
         frame = self._land_frame
@@ -894,21 +1097,24 @@ class GLMapRenderer:
             vao.release()
             vbo.release()
         self._end_additive_splat(fbo, prev)
-        raw = tex.read()
-        buf = array("f")
-        buf.frombytes(raw)
+        import numpy as np
+
+        np_dtype = np.float16 if self._field_dtype == "f2" else np.float32
+        values = np.frombuffer(tex.read(), dtype=np_dtype)
         expected = size[0] * size[1]
-        if len(buf) != expected:
+        buf = None
+        if values.size != expected:
             print(
-                f"GL road field: read {len(buf)} floats, expected {expected}",
+                f"GL road field: read {values.size} floats, expected {expected}",
                 flush=True,
             )
-            buf = None
+        else:
+            buf = array("f")
+            buf.frombytes(np.ascontiguousarray(values.astype(np.float32)).tobytes())
         if self._road_tex is not None:
             self._road_tex.release()
         self._road_tex = tex
         self._road_buf = buf
-        self._ensure_urban_overlay()
         print(
             f"GL road field: {n_pts} samples  sigma {sigma:.0f} m  "
             f"kernel {rp.kernel}",
@@ -950,6 +1156,8 @@ class GLMapRenderer:
             print(f"GL piers: failed to load {path.name}: {exc}", flush=True)
             return
         field = np.ascontiguousarray(mask.astype(np.float32) * stamp)
+        if self._field_dtype == "f2":
+            field = np.ascontiguousarray(field.astype(np.float16))
         height, width = field.shape
         tex = self._make_float_tex((width, height))
         tex.write(field.tobytes())
@@ -1006,7 +1214,6 @@ class GLMapRenderer:
             if self._urban_tex is not None:
                 self._urban_tex.release()
             self._urban_tex = None
-            self._ensure_urban_overlay()
             print("GL urban field: no buildings", flush=True)
             return
         tex = self._make_float_tex(size)
@@ -1031,50 +1238,11 @@ class GLMapRenderer:
         if self._urban_tex is not None:
             self._urban_tex.release()
         self._urban_tex = tex
-        self._ensure_urban_overlay()
         print(
             f"GL urban field: {n_b} buildings  sigma {sigma:.0f} m  "
             f"roadInf {influence:.4f}  piers {self._pier_n}",
             flush=True,
         )
-
-    def _draw_field_overlay(
-        self,
-        view: tuple[float, float, float, float],
-        tex,
-        params,
-        rgb: tuple[float, float, float],
-    ) -> None:
-        if tex is None or self._urban_overlay_vao is None:
-            return
-        tex.use(4)
-        prog = self.prog_urban_overlay
-        _set_uniform(prog, "u_view", view)
-        _set_uniform(prog, "u_land_frame", self._land_frame)
-        _set_uniform(prog, "u_urban", 4)
-        _set_uniform(prog, "u_overlay_rgb", rgb)
-        params.bind(_set_uniform, prog)
-        self._urban_overlay_vao.render(
-            mode=self.mgl.TRIANGLES, vertices=self._urban_overlay_nverts
-        )
-
-    def _draw_urban_debug(
-        self, view: tuple[float, float, float, float]
-    ) -> None:
-        if not self.debug_veg or self.radar or self._urban_overlay_vao is None:
-            return
-        self.ctx.enable(self.mgl.BLEND)
-        self.ctx.blend_func = self.mgl.SRC_ALPHA, self.mgl.ONE_MINUS_SRC_ALPHA
-        self._draw_field_overlay(
-            view, self._road_tex, self.road_params, (0.12, 0.92, 0.22)
-        )
-        self._draw_field_overlay(
-            view, self._urban_tex, self.urban, (0.2, 0.5, 1.0)
-        )
-        self.ctx.disable(self.mgl.BLEND)
-
-    def _urban_hud(self) -> str:
-        return f"{self.urban.label()}  {self.road_params.label()}"
 
     def _bind_veg(
         self,
@@ -1084,8 +1252,6 @@ class GLMapRenderer:
         view_w: float,
         pal: dict[str, tuple[int, int, int]],
     ) -> None:
-        if self._sea_tex is not None:
-            self._sea_tex.use(0)
         if self._veg_tex is not None:
             self._veg_tex.use(1)
         if self._veg_mix_tex is not None:
@@ -1093,25 +1259,17 @@ class GLMapRenderer:
         fill = pal["forest"] if kind == 1 else pal["grass"]
         soil = pal["grass"]
         canopy = pal["forest"]
-        land = pal["land"]
-        _set_uniform(prog, "u_sea", 0)
         _set_uniform(prog, "u_vegf", 1)
         _set_uniform(prog, "u_veg_mix", 2)
         _set_uniform(prog, "u_view", view)
-        _set_uniform(prog, "u_sea_frame", self._sea_frame)
-        _set_uniform(prog, "u_sea_max", SEA_MAX_DIST_M)
-        _set_uniform(prog, "u_sea_tex", float(SEA_TEX_SIZE))
         _set_uniform(prog, "u_veg_frame", self._veg_frame)
-        _set_uniform(prog, "u_veg_tex", (float(self._veg_tex_size[0]), float(self._veg_tex_size[1])))
-        _set_uniform(prog, "u_veg_max", float(self.veg.band_width_m))
         _set_uniform(prog, "u_view_width", view_w)
         _set_uniform(prog, "u_kind", kind)
         _set_uniform(prog, "u_radar", 1 if self.radar else 0)
-        _set_uniform(prog, "u_debug", 1 if self.debug_veg else 0)
+        _set_uniform(prog, "u_debug", 0)
         _set_uniform(prog, "u_fill", (fill[0] / 255.0, fill[1] / 255.0, fill[2] / 255.0))
         _set_uniform(prog, "u_soil", (soil[0] / 255.0, soil[1] / 255.0, soil[2] / 255.0))
         _set_uniform(prog, "u_canopy", (canopy[0] / 255.0, canopy[1] / 255.0, canopy[2] / 255.0))
-        _set_uniform(prog, "u_land", (land[0] / 255.0, land[1] / 255.0, land[2] / 255.0))
         if kind == 1:
             _set_uniform(prog, "u_tree_spacing", self.veg.forest_spacing_m)
             _set_uniform(prog, "u_tree_freq", self.veg.forest_freq)
@@ -1131,6 +1289,9 @@ class GLMapRenderer:
         mesh = self.layers.get(name)
         if mesh is None:
             return 0
+        if not VEG_DETAIL_CROWNS:
+            color = pal["forest"] if kind == 1 else pal["grass"]
+            return self._draw_mesh(name, color)
         self.ctx.disable(self.mgl.BLEND)
         prog = self.prog_veg if kind == 1 else self.prog_veg_grass
         self._bind_veg(prog, kind, view, view_w, pal)
@@ -1153,7 +1314,6 @@ class GLMapRenderer:
     def _draw_sea(
         self,
         view: tuple[float, float, float, float],
-        view_w: float,
         pal: dict[str, tuple[int, int, int]],
     ) -> None:
         if self.radar or self._sea_tex is None:
@@ -1166,8 +1326,6 @@ class GLMapRenderer:
         _set_uniform(self.prog_sea, "u_frame", self._sea_frame)
         _set_uniform(self.prog_sea, "u_max_dist", SEA_MAX_DIST_M)
         _set_uniform(self.prog_sea, "u_tex_size", float(SEA_TEX_SIZE))
-        _set_uniform(self.prog_sea, "u_time", perf_counter() - self._t0)
-        _set_uniform(self.prog_sea, "u_view_width", view_w)
         self.water.bind(_set_uniform, self.prog_sea)
         self._sea_vao.render(mode=self.mgl.TRIANGLES, vertices=3)
 
@@ -1229,20 +1387,6 @@ class GLMapRenderer:
         self._alloc_fbo(width, height)
         self.ctx.viewport = (0, 0, max(1, width), max(1, height))
 
-    def set_post_shader(self, fragment_src: str | None) -> None:
-        self._post_frag_override = fragment_src
-        new_prog = self.ctx.program(
-            vertex_shader=_shader("post.vert"),
-            fragment_shader=fragment_src or _shader("post.frag"),
-        )
-        new_vao = self.ctx.vertex_array(new_prog, [(self._post_vbo, "2f", "in_pos")])
-        old_prog = self.prog_post
-        old_vao = self._post_vao
-        self.prog_post = new_prog
-        self._post_vao = new_vao
-        old_vao.release()
-        old_prog.release()
-
     def draw(self, camera: Camera, screen_w: int, screen_h: int) -> dict[str, int]:
         if (screen_w, screen_h) != self._size:
             self._alloc_fbo(screen_w, screen_h)
@@ -1261,7 +1405,7 @@ class GLMapRenderer:
         target.use()
         self.ctx.viewport = (0, 0, screen_w, screen_h)
         self.ctx.disable(self.mgl.BLEND)
-        self._draw_sea(view, view_w, pal)
+        self._draw_sea(view, pal)
         _set_uniform(self.prog_map, "u_view", view)
         _set_uniform(self.prog_map, "u_tint", (1.0, 1.0, 1.0))
         _set_uniform(self.prog_map, "u_opacity", 1.0)
@@ -1270,7 +1414,6 @@ class GLMapRenderer:
         stats["coast"] = self._draw_land(view, pal)
         stats["vegetation"] += self._draw_veg("forest", 1, view, view_w, pal)
         stats["vegetation"] += self._draw_veg("grass", 0, view, view_w, pal)
-        self._draw_urban_debug(view)
         self._draw_shore(view, view_w)
 
         road_a = layer_opacity(view_w, ROADS_FADE_FULL_M, ROADS_FADE_GONE_M)

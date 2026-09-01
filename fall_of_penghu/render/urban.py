@@ -54,7 +54,6 @@ class UrbanParams:
     def bind(self, set_uniform, prog) -> None:
         set_uniform(prog, "u_urban_gain", float(self.gain))
         set_uniform(prog, "u_urban_sigma", float(self.sigma_m))
-        set_uniform(prog, "u_urban_peak", float(self.peak))
         set_uniform(prog, "u_urban_kernel", int(self.kernel))
         set_uniform(prog, "u_urban_gamma", float(self.gamma))
         set_uniform(prog, "u_urban_alpha", float(self.overlay_alpha))
@@ -90,7 +89,6 @@ class RoadParams:
     def bind(self, set_uniform, prog) -> None:
         set_uniform(prog, "u_urban_gain", float(self.gain))
         set_uniform(prog, "u_urban_sigma", float(self.sigma_m))
-        set_uniform(prog, "u_urban_peak", float(self.peak))
         set_uniform(prog, "u_urban_kernel", int(self.kernel))
         set_uniform(prog, "u_urban_gamma", float(self.gamma))
         set_uniform(prog, "u_urban_alpha", float(self.overlay_alpha))

@@ -9,7 +9,8 @@ import numpy as np
 
 from fall_of_penghu.mapdata import load_map
 from fall_of_penghu.render.geom import triangulate
-from fall_of_penghu.render.piers import PierParams, find_pier_rings
+from fall_of_penghu.render.pier_params import PierParams
+from fall_of_penghu.render.piers import find_pier_rings
 from fall_of_penghu.render.vegfield import _penghu_frame
 
 PIER_TEX_MAX_DIM = 8192

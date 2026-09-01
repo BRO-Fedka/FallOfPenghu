@@ -1,7 +1,6 @@
 #version 330 core
 #include "common.glsl"
 
-uniform vec4 u_view;
 uniform vec4 u_veg_frame;
 uniform sampler2D u_vegf;
 uniform sampler2D u_veg_mix;
@@ -11,7 +10,6 @@ uniform int u_debug;
 uniform vec3 u_fill;
 uniform vec3 u_soil;
 uniform vec3 u_canopy;
-uniform vec3 u_land;
 uniform float u_lod_near;
 uniform float u_lod_far;
 uniform float u_mix_max;

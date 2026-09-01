@@ -31,3 +31,4 @@ saves/
 logs/
 *.log
 output/*.pkl
+output/*.npz

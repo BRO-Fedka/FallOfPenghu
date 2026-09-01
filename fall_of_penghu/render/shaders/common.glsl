@@ -1,12 +1,6 @@
 // Shared noise. World coords are meters; hash is stable at ±100 km.
 // Do not name functions noise/noise1/noise2/noise3/noise4 — those are GLSL builtins.
 
-float hash11(vec2 p) {
-    vec3 p3 = fract(vec3(p.xyx) * 0.1031);
-    p3 += dot(p3, p3.yzx + 33.33);
-    return fract((p3.x + p3.y) * p3.z);
-}
-
 // Integer lattice hash. Float fract hashes smear along X at large world coords.
 float hash_i3(ivec3 p) {
     uvec3 n = uvec3(p) * uvec3(1597334677u, 3812015801u, 2798796413u);

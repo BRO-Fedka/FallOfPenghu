@@ -76,10 +76,6 @@ class Camera:
         wy = y - (sy - screen_h * 0.5) * mpp
         return wx, wy
 
-    def set_view_width(self, width_m: float) -> None:
-        self.target_view_width_m = width_m
-        self.view_width_m = width_m
-
     def move_to(self, x: float, y: float, view_width_m: float | None = None) -> None:
         self.target_x = x
         self.target_y = y
@@ -88,9 +84,6 @@ class Camera:
 
     def meters_per_pixel(self, screen_w: int) -> float:
         return self.view_width_m / max(screen_w, 1)
-
-    def view_height_m(self, screen_w: int, screen_h: int) -> float:
-        return self.meters_per_pixel(screen_w) * screen_h
 
     def world_bounds(self, screen_w: int, screen_h: int) -> tuple[float, float, float, float]:
         mpp = self.meters_per_pixel(screen_w)
@@ -102,14 +95,6 @@ class Camera:
             self.x + half_w,
             self.y + half_h,
         )
-
-    def world_to_screen(
-        self, wx: float, wy: float, screen_w: int, screen_h: int
-    ) -> tuple[float, float]:
-        mpp = self.meters_per_pixel(screen_w)
-        sx = (wx - self.x) / mpp + screen_w * 0.5
-        sy = (self.y - wy) / mpp + screen_h * 0.5
-        return sx, sy
 
     def screen_to_world(
         self, sx: float, sy: float, screen_w: int, screen_h: int

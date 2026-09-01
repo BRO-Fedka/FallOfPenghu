@@ -33,8 +33,6 @@ class WaterParams:
     shallow_width: float = 420.0
     deep_start: float = 900.0
     deep_end: float = 10000.0
-    color_warp_scale: float = 0.0045
-    color_warp_strength: float = 160.0
 
     # Master gain vs a full illustration look. Spec: ~20–35% of the reference.
     intensity: float = 0.28
@@ -43,8 +41,6 @@ class WaterParams:
     warp_strength: float = 0.55
     detail_scale: float = 0.18
     detail_strength: float = 0.22
-    along_warp: float = 0.0
-    ripple_inset_m: float = 0.0
 
     ripple_frequency: float = 0.10
     ripple_width: float = 0.11
@@ -69,14 +65,7 @@ class WaterParams:
     highlight_mask_high: float = 0.88
     highlight_phase: float = 0.61
 
-    large_wave_scale: float = 0.0075
-    large_wave_speed: float = 0.055
-    small_wave_scale: float = 0.038
-    small_wave_speed: float = 0.09
-
     mask_scale: float = 0.055
-    along_frequency: float = 0.0
-    noise_drift: float = 0.04
     # How fast the foam silhouette morphs (Hz-ish). 0 = frozen pattern.
     foam_evolve: float = 0.22
     foam_drift: float = 0.12
@@ -91,8 +80,6 @@ class WaterParams:
     foam_max_m: float = 7.0
     foam_pulse_hz: float = 0.28
     foam_width_noise: float = 0.45
-    foam_landward_m: float = 0.2
-    foam_landward_noise: float = 0.0
     foam_noise_scale: float = 0.08
 
     def bind(self, set_uniform, prog) -> None:
@@ -108,15 +95,11 @@ class WaterParams:
         set_uniform(prog, "u_shallow_width", float(self.shallow_width))
         set_uniform(prog, "u_deep_start", float(self.deep_start))
         set_uniform(prog, "u_deep_end", float(self.deep_end))
-        set_uniform(prog, "u_color_warp_scale", float(self.color_warp_scale))
-        set_uniform(prog, "u_color_warp_strength", float(self.color_warp_strength))
         set_uniform(prog, "u_intensity", float(self.intensity))
         set_uniform(prog, "u_warp_scale", float(self.warp_scale))
         set_uniform(prog, "u_warp_strength", float(self.warp_strength))
         set_uniform(prog, "u_detail_scale", float(self.detail_scale))
         set_uniform(prog, "u_detail_strength", float(self.detail_strength))
-        set_uniform(prog, "u_along_warp", float(self.along_warp))
-        set_uniform(prog, "u_ripple_inset", float(self.ripple_inset_m))
         set_uniform(prog, "u_ripple_frequency", float(self.ripple_frequency))
         set_uniform(prog, "u_ripple_width", float(self.ripple_width))
         set_uniform(prog, "u_ripple_speed", float(self.ripple_speed))
@@ -137,13 +120,7 @@ class WaterParams:
         set_uniform(prog, "u_highlight_mask_low", float(self.highlight_mask_low))
         set_uniform(prog, "u_highlight_mask_high", float(self.highlight_mask_high))
         set_uniform(prog, "u_highlight_phase", float(self.highlight_phase))
-        set_uniform(prog, "u_large_wave_scale", float(self.large_wave_scale))
-        set_uniform(prog, "u_large_wave_speed", float(self.large_wave_speed))
-        set_uniform(prog, "u_small_wave_scale", float(self.small_wave_scale))
-        set_uniform(prog, "u_small_wave_speed", float(self.small_wave_speed))
         set_uniform(prog, "u_mask_scale", float(self.mask_scale))
-        set_uniform(prog, "u_along_frequency", float(self.along_frequency))
-        set_uniform(prog, "u_noise_drift", float(self.noise_drift))
         set_uniform(prog, "u_foam_evolve", float(self.foam_evolve))
         set_uniform(prog, "u_foam_drift", float(self.foam_drift))
         set_uniform(prog, "u_ripple_fade_view", float(self.ripple_fade_view_m))
@@ -153,6 +130,4 @@ class WaterParams:
         set_uniform(prog, "u_foam_max", float(self.foam_max_m))
         set_uniform(prog, "u_foam_hz", float(self.foam_pulse_hz))
         set_uniform(prog, "u_foam_width_noise", float(self.foam_width_noise))
-        set_uniform(prog, "u_foam_landward", float(self.foam_landward_m))
-        set_uniform(prog, "u_foam_landward_noise", float(self.foam_landward_noise))
         set_uniform(prog, "u_foam_noise_scale", float(self.foam_noise_scale))

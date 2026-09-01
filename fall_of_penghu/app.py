@@ -64,8 +64,6 @@ def run() -> None:
                     running = False
                 elif event.key == pygame.K_r:
                     renderer.radar = not renderer.radar
-                elif event.key == pygame.K_SPACE:
-                    renderer.debug_veg = not getattr(renderer, "debug_veg", False)
                 elif event.key == pygame.K_HOME:
                     camera.move_to(cx, cy, view_w)
             elif event.type == pygame.MOUSEBUTTONDOWN:
@@ -97,12 +95,6 @@ def run() -> None:
         stats = renderer.draw(camera, screen_w, screen_h)
         wx, wy = camera.screen_to_world(*mouse, screen_w, screen_h)
         pal = renderer.palette()
-        if hasattr(renderer, "_urban_hud"):
-            urban_hud = renderer._urban_hud() + "   "
-        elif hasattr(renderer, "urban"):
-            urban_hud = renderer.urban.label() + "   "
-        else:
-            urban_hud = ""
         hud = (
             f"{clock.get_fps():5.1f} fps   "
             f"{display.gpu.backend}   "
@@ -111,15 +103,12 @@ def run() -> None:
             f"cam {camera.x:.0f},{camera.y:.0f}   "
             f"cursor {wx:.0f},{wy:.0f} m   "
             f"{'RADAR' if renderer.radar else 'MAP'}   "
-            f"{'DBG ' if getattr(renderer, 'debug_veg', False) else ''}"
-            f"{urban_hud}"
             f"draw c{stats['coast']} v{stats['vegetation']} "
             f"b{stats['buildings']} r{stats['roads']}"
         )
         text = font.render(hud, True, pal["hud"])
         hint = font.render(
-            "WASD pan  MMB drag  wheel zoom  R radar  Space debug  "
-            "Home reset  Esc quit",
+            "WASD pan  MMB drag  wheel zoom  R radar  Home reset  Esc quit",
             True,
             pal["hud"],
         )

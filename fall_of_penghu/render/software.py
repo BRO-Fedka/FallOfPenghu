@@ -17,7 +17,6 @@ class SoftwareMapRenderer:
         self.world = world
         self.surface = surface
         self.radar = False
-        self.debug_veg = False
         self.last_stats: dict[str, int] = {}
 
     def palette(self) -> dict[str, tuple[int, int, int]]:
@@ -27,9 +26,6 @@ class SoftwareMapRenderer:
         if surface is not None:
             self.surface = surface
         del width, height
-
-    def set_post_shader(self, fragment_src: str | None) -> None:
-        return None
 
     def draw(self, camera: Camera, screen_w: int, screen_h: int) -> dict[str, int]:
         frame = build_frame(self.world, camera, screen_w, screen_h, self.radar)

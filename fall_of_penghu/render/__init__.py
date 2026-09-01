@@ -41,8 +41,6 @@ class MapRenderer(Protocol):
 
     def present(self) -> None: ...
 
-    def set_post_shader(self, fragment_src: str | None) -> None: ...
-
 
 @dataclass
 class GameDisplay:

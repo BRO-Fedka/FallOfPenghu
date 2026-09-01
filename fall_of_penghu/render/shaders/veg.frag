@@ -1,12 +1,9 @@
 #version 330 core
 #include "common.glsl"
 
-uniform vec4 u_view;
 uniform vec4 u_veg_frame;
 uniform sampler2D u_vegf;
 uniform sampler2D u_veg_mix;
-uniform vec2 u_veg_tex;
-uniform float u_veg_max;
 uniform float u_view_width;
 uniform int u_kind;
 uniform int u_radar;
@@ -14,10 +11,8 @@ uniform int u_debug;
 uniform vec3 u_fill;
 uniform vec3 u_soil;
 uniform vec3 u_canopy;
-uniform vec3 u_land;
 uniform float u_lod_near;
 uniform float u_lod_far;
-uniform float u_mix_min;
 uniform float u_mix_max;
 uniform float u_mix_noise_scale;
 uniform float u_mix_noise_amp;
@@ -30,9 +25,6 @@ uniform float u_r_edge_max;
 uniform float u_tree_margin;
 uniform float u_band_width;
 in vec2 v_world;
-in float v_t;
-in vec2 v_n;
-in float v_band;
 out vec4 f_color;
 
 vec4 sample_veg(vec2 world) {

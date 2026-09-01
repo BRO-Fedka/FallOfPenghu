@@ -37,7 +37,6 @@ uniform float u_highlight_mask_low;
 uniform float u_highlight_mask_high;
 uniform float u_highlight_phase;
 uniform float u_mask_scale;
-uniform float u_noise_drift;
 uniform float u_foam_evolve;
 uniform float u_foam_drift;
 uniform float u_ripple_fade_view;
