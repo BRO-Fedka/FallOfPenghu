@@ -7,7 +7,7 @@ from shapely import contains_xy, prepare
 from shapely.geometry import GeometryCollection, MultiPolygon, Point, Polygon, box
 from shapely.ops import unary_union
 
-from fall_of_penghu.render.pier_params import PierParams
+from fall_of_penghu.render.static.piers.pier_params import PierParams
 
 
 def _signed_area(pts: list[tuple[float, float]]) -> float:

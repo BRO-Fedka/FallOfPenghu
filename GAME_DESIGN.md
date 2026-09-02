@@ -375,7 +375,20 @@ L0 Magong whole: **55** вызовов, 869 вершин; `fill_km2` ~3068, из
 
 Application (`app.py`) — цикл и окно. Меню, сейв и экран «Играть» отложены: процесс сразу входит в партию. Пауза времени (`clock.paused`) не то же самое, что будущее меню по Esc.
 
-Папки: `fall_of_penghu/world/`, `camera.py`, `input.py`, `ui.py`, `render/` (static — существующий GL/software, `dynamic.py` — иконки). Пустой `ai/taiwan` не заводить. SaveStore — когда появится сейв, не внутри World.
+Файл — одна реализация класса, узкой группы классов или одного куска функционала. Немаленький класс, который не dataclass, живёт в своём файле. Компонент из нескольких классов — папка. Классы одной задачи или с общим предком лежат в папке этой категории.
+
+Папки и файлы:
+
+- `world/` — `world.py` (фасад), `map.py`, `clock.py`, `entities.py`
+- `camera.py`, `input.py`, `ui.py`, `app.py` — отдельные файлы
+- `render/display.py` — окно и выбор GL/software
+- `render/static/` — карта
+  - `backends/` — GL и software (`MapRenderer`)
+  - `veg/`, `water/`, `piers/` — слои одной задачи
+  - `scene.py`, `geom.py`, `urban.py`
+- `render/dynamic/` — иконки сущностей
+
+Пустой `ai/taiwan` не заводить. SaveStore — когда появится сейв, не внутри World.
 
 ---
 

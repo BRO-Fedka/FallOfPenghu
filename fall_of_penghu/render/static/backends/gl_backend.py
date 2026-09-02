@@ -8,14 +8,14 @@ from time import perf_counter
 
 from fall_of_penghu.camera import Camera
 from fall_of_penghu.mapdata import MapData
-from fall_of_penghu.render.geom import pack_xy, stroke_polyline, stroke_seaward_band, triangulate
-from fall_of_penghu.render.seafield import SEA_MAX_DIST_M, SEA_TEX_SIZE, build_sea_distance
-from fall_of_penghu.render.veg import VEG_DETAIL_CROWNS, VegParams
-from fall_of_penghu.render.urban import UrbanParams, RoadParams
-from fall_of_penghu.render.pier_params import PierParams
-from fall_of_penghu.render.vegfield import _penghu_frame
-from fall_of_penghu.render.water import WaterParams
-from fall_of_penghu.render.scene import (
+from fall_of_penghu.render.static.geom import pack_xy, stroke_polyline, stroke_seaward_band, triangulate
+from fall_of_penghu.render.static.water.seafield import SEA_MAX_DIST_M, SEA_TEX_SIZE, build_sea_distance
+from fall_of_penghu.render.static.veg import VEG_DETAIL_CROWNS, VegParams
+from fall_of_penghu.render.static.urban import UrbanParams, RoadParams
+from fall_of_penghu.render.static.piers.pier_params import PierParams
+from fall_of_penghu.render.static.veg.vegfield import _penghu_frame
+from fall_of_penghu.render.static.water import WaterParams
+from fall_of_penghu.render.static.scene import (
     AIRPORTS_FADE_FULL_M,
     AIRPORTS_FADE_GONE_M,
     BUILDINGS_FADE_FULL_M,
@@ -27,7 +27,17 @@ from fall_of_penghu.render.scene import (
 )
 
 SHADER_DIR = Path(__file__).resolve().parent / "shaders"
-MESH_CACHE = Path(__file__).resolve().parents[2] / "output" / "gl_meshes_v1.pkl"
+
+
+def _repo_root() -> Path:
+    here = Path(__file__).resolve()
+    for p in here.parents:
+        if (p / "penghu_map_v1").is_dir() or (p / "main.py").is_file():
+            return p
+    return here.parents[4]
+
+
+MESH_CACHE = _repo_root() / "output" / "gl_meshes_v1.pkl"
 FULLSCREEN_TRI = array("f", [-1.0, -1.0, 3.0, -1.0, -1.0, 3.0])
 MSAA_SAMPLES = 4
 MIN_ROAD_WIDTH_M = 2.0
@@ -1139,7 +1149,7 @@ class GLMapRenderer:
         path = self._pier_field_path()
         if path is None:
             print(
-                "GL piers: no piers_field.npz — run python -m fall_of_penghu.pier_prep",
+                "GL piers: no piers_field.npz — run python -m fall_of_penghu.render.static.piers.prep",
                 flush=True,
             )
             return

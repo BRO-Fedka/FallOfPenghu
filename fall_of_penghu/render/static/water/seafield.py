@@ -8,9 +8,18 @@ import pygame
 
 from fall_of_penghu.mapdata import MapData
 
+
+def _repo_root() -> Path:
+    here = Path(__file__).resolve()
+    for p in here.parents:
+        if (p / "penghu_map_v1").is_dir() or (p / "main.py").is_file():
+            return p
+    return here.parents[4]
+
+
 SEA_TEX_SIZE = 1024
 SEA_MAX_DIST_M = 14_000.0
-SEA_CACHE = Path(__file__).resolve().parents[2] / "output" / "sea_dist_v2.pkl"
+SEA_CACHE = _repo_root() / "output" / "sea_dist_v2.pkl"
 
 
 def _frame(world: MapData) -> tuple[float, float, float, float]:

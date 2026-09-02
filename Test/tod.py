@@ -7,7 +7,7 @@ Radar is a separate look and is never TOD-graded.
 
 from __future__ import annotations
 
-from fall_of_penghu.render.scene import NORMAL
+from fall_of_penghu.render.static.scene import NORMAL
 
 DAY_SECONDS = 30.0
 

@@ -4,8 +4,8 @@ import pygame
 
 from fall_of_penghu.camera import Camera
 from fall_of_penghu.mapdata import MapData
-from fall_of_penghu.render.geom import clip_ring
-from fall_of_penghu.render.scene import build_frame, palette_for
+from fall_of_penghu.render.static.geom import clip_ring
+from fall_of_penghu.render.static.scene import build_frame, palette_for
 
 
 class SoftwareMapRenderer:

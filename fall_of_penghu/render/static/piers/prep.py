@@ -8,10 +8,10 @@ from time import perf_counter
 import numpy as np
 
 from fall_of_penghu.mapdata import load_map
-from fall_of_penghu.render.geom import triangulate
-from fall_of_penghu.render.pier_params import PierParams
-from fall_of_penghu.render.piers import find_pier_rings
-from fall_of_penghu.render.vegfield import _penghu_frame
+from fall_of_penghu.render.static.geom import triangulate
+from fall_of_penghu.render.static.piers.pier_params import PierParams
+from fall_of_penghu.render.static.piers.piers import find_pier_rings
+from fall_of_penghu.render.static.veg.vegfield import _penghu_frame
 
 PIER_TEX_MAX_DIM = 8192
 PIER_FIELD_NAME = "piers_field.npz"

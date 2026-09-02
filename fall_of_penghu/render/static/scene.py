@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 
 from fall_of_penghu.camera import Camera
 from fall_of_penghu.mapdata import LineFeature, MapData, PolyFeature
-from fall_of_penghu.render.geom import overlaps, pad_view
+from fall_of_penghu.render.static.geom import overlaps, pad_view
 
 NORMAL = {
     "sea": (30, 180, 195),

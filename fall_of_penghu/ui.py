@@ -3,7 +3,7 @@ from __future__ import annotations
 import pygame
 
 from fall_of_penghu.camera import Camera
-from fall_of_penghu.render.scene import palette_for
+from fall_of_penghu.render.static.scene import palette_for
 from fall_of_penghu.world.clock import Clock
 
 

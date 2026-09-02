@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from fall_of_penghu.render.scene import BUILDINGS_FADE_FULL_M, BUILDINGS_FADE_GONE_M
+from fall_of_penghu.render.static.scene import BUILDINGS_FADE_FULL_M, BUILDINGS_FADE_GONE_M
 
 # True: fill far away, crowns/grass up close (current look). LOD distances unchanged.
 # False: forest and grass are always the palette fill; no tree_blobs / tree_disk.
