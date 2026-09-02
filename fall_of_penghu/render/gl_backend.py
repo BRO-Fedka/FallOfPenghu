@@ -1390,6 +1390,7 @@ class GLMapRenderer:
     def draw(self, camera: Camera, screen_w: int, screen_h: int) -> dict[str, int]:
         if (screen_w, screen_h) != self._size:
             self._alloc_fbo(screen_w, screen_h)
+        self.radar = camera.radar_mode
         pal = self.palette()
         view = camera.world_bounds(screen_w, screen_h)
         view_w = camera.view_width_m

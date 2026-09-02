@@ -353,6 +353,30 @@ L0 Magong whole: **55** вызовов, 869 вершин; `fill_km2` ~3068, из
 
 Симуляция не знает разрешение окна. UI не хранит авторитетное состояние мира.
 
+### Модули кода (2026-09-02)
+
+Структура пакетов следует этим ролям. World никого из показа и ввода не импортирует. Render не импортирует input и ui: радар читается с камеры.
+
+| Модуль | Читает | Пишет | Не импортирует |
+|---|---|---|---|
+| `world.map` | никто | ничего в рантайме | camera, render, ui, ai |
+| `world.clock` | никто | счётчики в `advance()` | render, camera, ui |
+| `world.entities` | map, clock | позиции, приказы | render, camera, ui, input, ai |
+| `camera` | map (рамка 200 км) | пан, зум, `radar_mode` | entities, ui, render |
+| `render.static` | map, clock, camera | пиксели земли | input, ui, ai, entities |
+| `render.dynamic` | entities, camera | слой иконок | input, ui, ai |
+| `input` | camera, entities, clock | камера, приказы, радар, пауза/скорость | шейдеры, ai |
+| `ui` | camera, entities, clock | chrome, кнопки скорости/радара | шейдеры, ai |
+| `ai.china` | entities | приказы в entities | render, camera, ui, input |
+
+`World` — фасад партии: `map` + `clock` + `entities` + `seed`. Куски импортируются по отдельности, чтобы static-рендер не тянул список юнитов.
+
+Камера — модуль сеанса, не часть карты. `radar_mode` на камере — ярлык показа на джем; правила обнаружения, когда появятся, живут в world.
+
+Application (`app.py`) — цикл и окно. Меню, сейв и экран «Играть» отложены: процесс сразу входит в партию. Пауза времени (`clock.paused`) не то же самое, что будущее меню по Esc.
+
+Папки: `fall_of_penghu/world/`, `camera.py`, `input.py`, `ui.py`, `render/` (static — существующий GL/software, `dynamic.py` — иконки). Пустой `ai/taiwan` не заводить. SaveStore — когда появится сейв, не внутри World.
+
 ---
 
 ## 13. Первый прототип: определение готовности

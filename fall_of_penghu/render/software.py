@@ -28,6 +28,7 @@ class SoftwareMapRenderer:
         del width, height
 
     def draw(self, camera: Camera, screen_w: int, screen_h: int) -> dict[str, int]:
+        self.radar = camera.radar_mode
         frame = build_frame(self.world, camera, screen_w, screen_h, self.radar)
         self.surface.fill(frame.sea)
         for cmd in frame.polys:

@@ -20,6 +20,7 @@ class Camera:
         self.max_view_width_m = max_view_width_m
         self.smooth_tau_s = smooth_tau_s
         self.frame = (-100_000.0, -100_000.0, 100_000.0, 100_000.0)
+        self.radar_mode = False
         self.x = center_x
         self.y = center_y
         self.view_width_m = view_width_m
@@ -84,6 +85,14 @@ class Camera:
 
     def meters_per_pixel(self, screen_w: int) -> float:
         return self.view_width_m / max(screen_w, 1)
+
+    def world_to_screen(
+        self, wx: float, wy: float, screen_w: int, screen_h: int
+    ) -> tuple[float, float]:
+        mpp = self.meters_per_pixel(screen_w)
+        sx = (wx - self.x) / mpp + screen_w * 0.5
+        sy = (self.y - wy) / mpp + screen_h * 0.5
+        return sx, sy
 
     def world_bounds(self, screen_w: int, screen_h: int) -> tuple[float, float, float, float]:
         mpp = self.meters_per_pixel(screen_w)

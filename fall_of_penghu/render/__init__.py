@@ -10,11 +10,13 @@ from fall_of_penghu.camera import Camera
 from fall_of_penghu.mapdata import MapData
 from fall_of_penghu.render.gpu import GpuInfo, assess_gl, software_info
 from fall_of_penghu.render.scene import NORMAL, RADAR, palette_for
+from fall_of_penghu.render.dynamic import DynamicRenderer
 from fall_of_penghu.render.software import SoftwareMapRenderer
 
 __all__ = [
     "NORMAL",
     "RADAR",
+    "DynamicRenderer",
     "GameDisplay",
     "GpuInfo",
     "MapRenderer",
