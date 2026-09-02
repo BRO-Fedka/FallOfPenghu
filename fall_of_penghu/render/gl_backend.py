@@ -34,7 +34,7 @@ MIN_ROAD_WIDTH_M = 2.0
 RADAR_OUTLINE_M = 8.0
 PIER_FIELD_NAME = "piers_field.npz"
 FIELD_CACHE_NAME = "gl_fields_v1.npz"
-SDF_TEX_MAX_DIM = 8192
+SDF_TEX_MAX_DIM = 4096
 
 
 def _poly_groups(world: MapData):
