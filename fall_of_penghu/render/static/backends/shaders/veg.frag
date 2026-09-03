@@ -6,7 +6,6 @@ uniform sampler2D u_vegf;
 uniform sampler2D u_veg_mix;
 uniform float u_view_width;
 uniform int u_kind;
-uniform int u_radar;
 uniform int u_debug;
 uniform vec3 u_fill;
 uniform vec3 u_soil;
@@ -138,12 +137,9 @@ vec3 tree_blobs(vec2 p, out float coverage) {
 }
 
 void main() {
-    float fill_a = 1.0;
-    if (u_radar == 0) {
-        float span = max(u_lod_far - u_lod_near, 1.0);
-        float t = clamp((u_view_width - u_lod_near) / span, 0.0, 1.0);
-        fill_a = t * t * (3.0 - 2.0 * t);
-    }
+    float span = max(u_lod_far - u_lod_near, 1.0);
+    float t = clamp((u_view_width - u_lod_near) / span, 0.0, 1.0);
+    float fill_a = t * t * (3.0 - 2.0 * t);
     if (u_debug == 0 && fill_a > 0.997) {
         f_color = vec4(u_fill, 1.0);
         return;

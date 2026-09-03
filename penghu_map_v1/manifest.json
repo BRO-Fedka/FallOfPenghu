@@ -83,15 +83,25 @@
     },
     "gl_fields": {
       "file": "gl_fields_v1.npz"
+    },
+    "dem": {
+      "file": "dem.npz",
+      "width": 1537,
+      "height": 2354,
+      "cell_m": 30.0,
+      "nodata": -1000.0,
+      "vertical": "EGM2008",
+      "coverage": "penghu_pad_2km",
+      "source": "Copernicus_DEM_GLO-30",
+      "owner_accepted_30m": true
     }
   },
   "excluded": [
     "pink_roads",
     "pixelated_zones",
     "aerodrome_boundaries",
-    "dem",
     "orthophoto",
     "lod_coast_variants"
   ],
-  "notes": "Taiwan clipped by world frame; do not draw when viewport is Penghu-only. Coordinates are local meters: EPSG:3825 minus origin_epsg3825. v1 has one full-detail coast; LOD simplification is not in this package."
+  "notes": "Taiwan clipped by world frame; do not draw when viewport is Penghu-only. Coordinates are local meters: EPSG:3825 minus origin_epsg3825. v1 has one full-detail coast; LOD simplification is not in this package. DEM is Copernicus GLO-30 at 30 m (cell_m=30), coverage penghu_pad_2km. Finer official MOI/NLSC 20 m DTM cannot be fetched from this environment (TGOS returns 403). Owner accepted 30 m; RADAR_DEM_SPEC reject-ge-30m does not apply to this delivery. Ocean is nodata -1000; isolines are extracted in-game at 5 m. origin_epsg3825 unchanged."
 }

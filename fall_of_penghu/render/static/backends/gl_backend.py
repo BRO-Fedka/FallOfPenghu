@@ -8,7 +8,21 @@ from time import perf_counter
 
 from fall_of_penghu.camera import Camera
 from fall_of_penghu.mapdata import MapData
-from fall_of_penghu.render.static.geom import pack_xy, stroke_polyline, stroke_seaward_band, triangulate
+from fall_of_penghu.render.static.geom import pack_xy, stroke_centerline_sides, stroke_polyline, stroke_seaward_band, triangulate
+from fall_of_penghu.render.static.radar import (
+    COAST_PX,
+    CONTOUR_PX,
+    GRID_M,
+    GRID_PX,
+    LINE_PX_MAX,
+    RADAR,
+    dem_path,
+)
+from fall_of_penghu.render.static.radar_contours import (
+    isoline_segments,
+    km_grid_segments,
+    stroke_segments,
+)
 from fall_of_penghu.render.static.water.seafield import SEA_MAX_DIST_M, SEA_TEX_SIZE, build_sea_distance
 from fall_of_penghu.render.static.veg import VEG_DETAIL_CROWNS, VegParams
 from fall_of_penghu.render.static.urban import UrbanParams, RoadParams
@@ -41,7 +55,6 @@ MESH_CACHE = _repo_root() / "output" / "gl_meshes_v1.pkl"
 FULLSCREEN_TRI = array("f", [-1.0, -1.0, 3.0, -1.0, -1.0, 3.0])
 MSAA_SAMPLES = 4
 MIN_ROAD_WIDTH_M = 2.0
-RADAR_OUTLINE_M = 8.0
 PIER_FIELD_NAME = "piers_field.npz"
 FIELD_CACHE_NAME = "gl_fields_v1.npz"
 SDF_TEX_MAX_DIM = 4096
@@ -383,6 +396,10 @@ class GLMapRenderer:
             vertex_shader=_shader("shore.vert"),
             fragment_shader=_shader("shore.frag"),
         )
+        self.prog_radar_line = ctx.program(
+            vertex_shader=_shader("radar_line.vert"),
+            fragment_shader=_shader("radar_line.frag"),
+        )
         self.prog_veg = None
         self.prog_veg_grass = None
         if VEG_DETAIL_CROWNS:
@@ -430,6 +447,20 @@ class GLMapRenderer:
         self._road_buf: array | None = None
         self._pier_tex = None
         self._pier_n = 0
+        self._radar_coast_vao = None
+        self._radar_coast_nverts = 0
+        self._radar_coast_vbo = None
+        self._radar_airport_vao = None
+        self._radar_airport_nverts = 0
+        self._radar_airport_vbo = None
+        self._radar_fill: list[tuple[str, object, int, int]] = []
+        self._radar_iso_vao = None
+        self._radar_iso_nverts = 0
+        self._radar_iso_vbo = None
+        self._radar_grid_line_vao = None
+        self._radar_grid_line_nverts = 0
+        self._radar_grid_line_vbo = None
+        self._upload_radar_layers()
         self._field_dtype = "f4"
         self._field_add_vbo = ctx.buffer(FULLSCREEN_TRI.tobytes())
         self._field_add_vao = ctx.vertex_array(
@@ -439,6 +470,7 @@ class GLMapRenderer:
         self._post_vbo = ctx.buffer(FULLSCREEN_TRI.tobytes())
         self._post_vao = ctx.vertex_array(self.prog_post, [(self._post_vbo, "2f", "in_pos")])
         self._sea_vao = ctx.vertex_array(self.prog_sea, [(self._post_vbo, "2f", "in_pos")])
+        self._load_radar_dem()
         self._overlay_vbo = ctx.buffer(reserve=96, dynamic=True)
         self._overlay_vao = ctx.vertex_array(
             self.prog_overlay, [(self._overlay_vbo, "2f 2f", "in_pos", "in_uv")]
@@ -552,15 +584,6 @@ class GLMapRenderer:
             world.airport_lines, lambda f: max(f.width_m, 8.0)
         )
 
-        outline_chunks: list[array] = []
-        n_outline = 0
-        for feat in world.coast:
-            stroke = stroke_polyline(feat.exterior, RADAR_OUTLINE_M, closed=True)
-            if len(stroke) >= 6:
-                outline_chunks.append(stroke)
-                n_outline += 1
-        coast_outline = _concat(outline_chunks)
-
         forest_prog = self.prog_veg if VEG_DETAIL_CROWNS else self.prog_map
         grass_prog = self.prog_veg_grass if VEG_DETAIL_CROWNS else self.prog_map
         specs = {
@@ -573,7 +596,6 @@ class GLMapRenderer:
             "roads": (roads, n_roads, self.prog_map),
             "bridges": (bridges, n_bridges, self.prog_map),
             "airport_lines": (airport_lines, n_apt_lines, self.prog_map),
-            "coast_outline": (coast_outline, n_outline, self.prog_map),
         }
         verts = 0
         draws = 0
@@ -585,6 +607,120 @@ class GLMapRenderer:
                 draws += 1
         print(
             f"GL static VBO: {draws} layers, {verts} verts in {perf_counter() - t0:.3f}s",
+            flush=True,
+        )
+
+    def _upload_radar_layers(self) -> None:
+        self._radar_fill = []
+        for name in ("taiwan", "coast"):
+            mesh = self.layers.get(name)
+            if mesh is None or mesh.vbo is None:
+                continue
+            vao = self.ctx.vertex_array(
+                self.prog_map, [(mesh.vbo, "2f", "in_pos")]
+            )
+            self._radar_fill.append((name, vao, mesh.nverts, mesh.features))
+
+        def stroke_vao(chunks: list[array]) -> tuple[object | None, object | None, int]:
+            data = _concat(chunks)
+            if len(data) < 16:
+                return None, None, 0
+            vbo = self.ctx.buffer(data.tobytes())
+            nverts = len(data) // 4
+            vao = self.ctx.vertex_array(
+                self.prog_radar_line, [(vbo, "2f 2f", "in_pos", "in_side")]
+            )
+            return vao, vbo, nverts
+
+        coast_chunks: list[array] = []
+        n_rings = 0
+        for group in (self.world.taiwan, self.world.coast):
+            for feat in group:
+                stroke = stroke_centerline_sides(feat.exterior, closed=True)
+                if len(stroke) >= 16:
+                    coast_chunks.append(stroke)
+                    n_rings += 1
+        self._radar_coast_vao, self._radar_coast_vbo, self._radar_coast_nverts = stroke_vao(
+            coast_chunks
+        )
+        print(
+            f"GL radar coast: {self._radar_coast_nverts} verts / {n_rings} rings",
+            flush=True,
+        )
+
+        apt_chunks: list[array] = []
+        n_apt = 0
+        for feat in self.world.airports:
+            stroke = stroke_centerline_sides(feat.exterior, closed=True)
+            if len(stroke) >= 16:
+                apt_chunks.append(stroke)
+                n_apt += 1
+        for feat in self.world.airport_lines:
+            stroke = stroke_centerline_sides(feat.points, closed=False)
+            if len(stroke) >= 16:
+                apt_chunks.append(stroke)
+                n_apt += 1
+        self._radar_airport_vao, self._radar_airport_vbo, self._radar_airport_nverts = stroke_vao(
+            apt_chunks
+        )
+        print(
+            f"GL radar airport outlines: {self._radar_airport_nverts} verts / {n_apt}",
+            flush=True,
+        )
+
+        frame_min = self.world.manifest.get("frame_min_xy") or [-100000.0, -100000.0]
+        frame_max = self.world.manifest.get("frame_max_xy") or [100000.0, 100000.0]
+        grid_stroke = stroke_segments(
+            km_grid_segments(
+                (float(frame_min[0]), float(frame_min[1]), float(frame_max[0]), float(frame_max[1])),
+                GRID_M,
+            )
+        )
+        if len(grid_stroke) >= 16:
+            vbo = self.ctx.buffer(grid_stroke.tobytes())
+            self._radar_grid_line_vbo = vbo
+            self._radar_grid_line_nverts = len(grid_stroke) // 4
+            self._radar_grid_line_vao = self.ctx.vertex_array(
+                self.prog_radar_line, [(vbo, "2f 2f", "in_pos", "in_side")]
+            )
+            print(
+                f"GL radar grid: {self._radar_grid_line_nverts} verts  cell {GRID_M:.0f} m",
+                flush=True,
+            )
+
+    def _load_radar_dem(self) -> None:
+        path = dem_path(self.world.map_dir)
+        if path is None:
+            print("GL radar: no dem.npz — contours skipped", flush=True)
+            return
+        import numpy as np
+
+        try:
+            data = np.load(path)
+            height = np.ascontiguousarray(data["height"], dtype=np.float32)
+            frame = tuple(float(v) for v in data["frame"])
+            nodata = float(data["nodata"]) if "nodata" in data else -1000.0
+        except Exception as exc:
+            print(f"GL radar: dem.npz failed ({exc})", flush=True)
+            return
+        if height.ndim != 2 or height.size < 4 or len(frame) != 4:
+            print("GL radar: dem.npz shape rejected", flush=True)
+            return
+        t0 = perf_counter()
+        segs = isoline_segments(height, frame, nodata)
+        stroke = stroke_segments(segs)
+        if len(stroke) < 16:
+            print("GL radar: no isolines", flush=True)
+            return
+        vbo = self.ctx.buffer(stroke.tobytes())
+        self._radar_iso_vbo = vbo
+        self._radar_iso_nverts = len(stroke) // 4
+        self._radar_iso_vao = self.ctx.vertex_array(
+            self.prog_radar_line, [(vbo, "2f 2f", "in_pos", "in_side")]
+        )
+        print(
+            f"GL radar isolines: {len(segs)} segs  {self._radar_iso_nverts} verts  "
+            f"{perf_counter() - t0:.2f}s",
             flush=True,
         )
 
@@ -842,7 +978,6 @@ class GLMapRenderer:
             "u_concrete",
             (concrete[0] / 255.0, concrete[1] / 255.0, concrete[2] / 255.0),
         )
-        _set_uniform(prog, "u_radar", 1 if self.radar else 0)
         self.urban.bind(_set_uniform, prog)
         self.veg.bind(_set_uniform, prog)
         mesh.vao.render(mode=self.mgl.TRIANGLES, vertices=mesh.nverts)
@@ -1276,7 +1411,6 @@ class GLMapRenderer:
         _set_uniform(prog, "u_veg_frame", self._veg_frame)
         _set_uniform(prog, "u_view_width", view_w)
         _set_uniform(prog, "u_kind", kind)
-        _set_uniform(prog, "u_radar", 1 if self.radar else 0)
         _set_uniform(prog, "u_debug", 0)
         _set_uniform(prog, "u_fill", (fill[0] / 255.0, fill[1] / 255.0, fill[2] / 255.0))
         _set_uniform(prog, "u_soil", (soil[0] / 255.0, soil[1] / 255.0, soil[2] / 255.0))
@@ -1315,7 +1449,7 @@ class GLMapRenderer:
         view_w: float,
         pal: dict[str, tuple[int, int, int]],
     ) -> None:
-        if self.radar or self._shore_vao is None:
+        if self._shore_vao is None:
             return
         self.ctx.enable(self.mgl.BLEND)
         _set_uniform(self.prog_shore, "u_view", view)
@@ -1330,7 +1464,7 @@ class GLMapRenderer:
         view: tuple[float, float, float, float],
         pal: dict[str, tuple[int, int, int]],
     ) -> None:
-        if self.radar or self._sea_tex is None:
+        if self._sea_tex is None:
             r, g, b = pal["sea"]
             self.ctx.clear(r / 255.0, g / 255.0, b / 255.0, 1.0)
             return
@@ -1408,9 +1542,28 @@ class GLMapRenderer:
             self._alloc_fbo(screen_w, screen_h)
         self.radar = camera.radar_mode
         self.tod = tod
-        pal = self.palette()
         view = camera.world_bounds(screen_w, screen_h)
         view_w = camera.view_width_m
+        mpp = camera.meters_per_pixel(screen_w)
+        target = self._msaa_fbo or self._fbo
+        target.use()
+        self.ctx.viewport = (0, 0, screen_w, screen_h)
+        if camera.radar_mode:
+            stats = self._draw_radar(view, view_w, mpp)
+        else:
+            stats = self._draw_normal(view, view_w, tod)
+        self.ctx.disable(self.mgl.BLEND)
+        self._blit_to_screen(screen_w, screen_h)
+        self.last_stats = stats
+        return stats
+
+    def _draw_normal(
+        self,
+        view: tuple[float, float, float, float],
+        view_w: float,
+        tod: float,
+    ) -> dict[str, int]:
+        pal = palette_for(False, tod)
         stats = {
             "taiwan": 0,
             "coast": 0,
@@ -1419,9 +1572,6 @@ class GLMapRenderer:
             "roads": 0,
             "airports": 0,
         }
-        target = self._msaa_fbo or self._fbo
-        target.use()
-        self.ctx.viewport = (0, 0, screen_w, screen_h)
         self.ctx.disable(self.mgl.BLEND)
         self._draw_sea(view, pal)
         _set_uniform(self.prog_map, "u_view", view)
@@ -1444,28 +1594,147 @@ class GLMapRenderer:
 
         bld_a = layer_opacity(view_w, BUILDINGS_FADE_FULL_M, BUILDINGS_FADE_GONE_M)
         stats["buildings"] = self._draw_mesh("buildings", pal["building"], bld_a)
+        return stats
 
-        if self.radar:
-            self._draw_mesh("coast_outline", pal["hud"])
+    def _draw_radar(
+        self,
+        view: tuple[float, float, float, float],
+        view_w: float,
+        mpp: float,
+    ) -> dict[str, int]:
+        pal = RADAR
+        stats = {
+            "taiwan": 0,
+            "coast": 0,
+            "vegetation": 0,
+            "buildings": 0,
+            "roads": 0,
+            "airports": 0,
+        }
+        r, g, b = pal["sea"]
         self.ctx.disable(self.mgl.BLEND)
+        self.ctx.clear(r / 255.0, g / 255.0, b / 255.0, 1.0)
+        self._draw_radar_grid(view, mpp, pal)
+        stats["taiwan"], stats["coast"] = self._draw_radar_land(view, pal)
+        self._draw_radar_contours(view, mpp, pal)
+        self._draw_radar_coast(view, mpp, pal)
+        stats["airports"] = self._draw_radar_airports(view, mpp, pal)
+        stats["roads"] = self._draw_mesh("bridges", pal["bridge"])
+        bld_a = layer_opacity(view_w, BUILDINGS_FADE_FULL_M, BUILDINGS_FADE_GONE_M)
+        stats["buildings"] = self._draw_mesh("buildings", pal["building"], bld_a)
+        return stats
 
+    def _rgb(self, color: tuple[int, int, int]) -> tuple[float, float, float]:
+        return (color[0] / 255.0, color[1] / 255.0, color[2] / 255.0)
+
+    def _draw_radar_land(
+        self,
+        view: tuple[float, float, float, float],
+        pal: dict[str, tuple[int, int, int]],
+    ) -> tuple[int, int]:
+        """Opaque black fill via prog_map. Coast's normal VAO is land.frag and must not be used."""
+        self.ctx.disable(self.mgl.BLEND)
+        _set_uniform(self.prog_map, "u_view", view)
+        _set_uniform(self.prog_map, "u_tint", (1.0, 1.0, 1.0))
+        _set_uniform(self.prog_map, "u_opacity", 1.0)
+        _set_uniform(self.prog_map, "u_color", self._rgb(pal["land"]))
+        taiwan = coast = 0
+        for name, vao, nverts, features in self._radar_fill:
+            vao.render(mode=self.mgl.TRIANGLES, vertices=nverts)
+            if name == "taiwan":
+                taiwan = features
+            else:
+                coast = features
+        return taiwan, coast
+
+    def _draw_radar_grid(
+        self,
+        view: tuple[float, float, float, float],
+        mpp: float,
+        pal: dict[str, tuple[int, int, int]],
+    ) -> None:
+        self._draw_radar_lines(
+            self._radar_grid_line_vao,
+            self._radar_grid_line_nverts,
+            view,
+            mpp,
+            pal["grid"],
+            GRID_PX,
+        )
+
+    def _draw_radar_contours(
+        self,
+        view: tuple[float, float, float, float],
+        mpp: float,
+        pal: dict[str, tuple[int, int, int]],
+    ) -> None:
+        self._draw_radar_lines(
+            self._radar_iso_vao,
+            self._radar_iso_nverts,
+            view,
+            mpp,
+            pal["contour"],
+            CONTOUR_PX,
+        )
+
+    def _draw_radar_lines(
+        self,
+        vao,
+        nverts: int,
+        view: tuple[float, float, float, float],
+        mpp: float,
+        color: tuple[int, int, int],
+        width_px: float,
+    ) -> None:
+        if vao is None or nverts < 3:
+            return
+        self.ctx.disable(self.mgl.BLEND)
+        half = max(min(width_px, LINE_PX_MAX) * 0.5 * mpp, 1e-4)
+        _set_uniform(self.prog_radar_line, "u_view", view)
+        _set_uniform(self.prog_radar_line, "u_half_width_m", half)
+        _set_uniform(self.prog_radar_line, "u_color", self._rgb(color))
+        vao.render(mode=self.mgl.TRIANGLES, vertices=nverts)
+
+    def _draw_radar_coast(
+        self,
+        view: tuple[float, float, float, float],
+        mpp: float,
+        pal: dict[str, tuple[int, int, int]],
+    ) -> None:
+        self._draw_radar_lines(
+            self._radar_coast_vao, self._radar_coast_nverts, view, mpp, pal["coast"], COAST_PX
+        )
+
+    def _draw_radar_airports(
+        self,
+        view: tuple[float, float, float, float],
+        mpp: float,
+        pal: dict[str, tuple[int, int, int]],
+    ) -> int:
+        self._draw_radar_lines(
+            self._radar_airport_vao,
+            self._radar_airport_nverts,
+            view,
+            mpp,
+            pal["airport"],
+            COAST_PX,
+        )
+        return 1 if self._radar_airport_vao is not None else 0
+
+    def _blit_to_screen(self, screen_w: int, screen_h: int) -> None:
         if self._msaa_fbo is not None:
             try:
                 self.ctx.copy_framebuffer(self._fbo, self._msaa_fbo)
             except Exception:
                 self._msaa_fbo = None
                 self._msaa_samples = 0
-
         self.ctx.screen.use()
         self.ctx.viewport = (0, 0, screen_w, screen_h)
         self._fbo_tex.use(0)
         _set_uniform(self.prog_post, "u_map", 0)
         _set_uniform(self.prog_post, "u_resolution", (float(screen_w), float(screen_h)))
         _set_uniform(self.prog_post, "u_time", perf_counter() - self._t0)
-        _set_uniform(self.prog_post, "u_radar", 1 if self.radar else 0)
         self._post_vao.render(mode=self.mgl.TRIANGLES, vertices=3)
-        self.last_stats = stats
-        return stats
 
     def overlay(self, surface, dest: tuple[int, int] = (0, 0)) -> None:
         import pygame

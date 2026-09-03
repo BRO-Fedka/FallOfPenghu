@@ -453,6 +453,28 @@ def stroke_polyline(
     return data
 
 
+def stroke_centerline_sides(
+    points: list[tuple[float, float]],
+    *,
+    closed: bool = False,
+) -> array:
+    """x y sx sy. Centerline plus unit side; half-width is applied in the shader."""
+    pts = _clean_poly(points, closed=closed)
+    data = array("f")
+    for a, b, _ux, _uy, nx, ny in _seg_list(pts, closed=closed):
+        data.extend(
+            (
+                a[0], a[1], nx, ny,
+                a[0], a[1], -nx, -ny,
+                b[0], b[1], nx, ny,
+                a[0], a[1], -nx, -ny,
+                b[0], b[1], -nx, -ny,
+                b[0], b[1], nx, ny,
+            )
+        )
+    return data
+
+
 def _append_band_vert(
     data: array,
     p: tuple[float, float],

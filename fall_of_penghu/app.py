@@ -54,7 +54,7 @@ def run() -> None:
         mouse = pygame.mouse.get_pos()
 
         for event in pygame.event.get():
-            if hud.handle_event(event, world.clock, camera.debug_mode):
+            if hud.handle_event(event, world.clock, camera):
                 continue
             if event.type == pygame.MOUSEWHEEL and hud.hits_chrome(
                 *pygame.mouse.get_pos()[:2], screen_h, camera.debug_mode

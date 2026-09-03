@@ -15,15 +15,10 @@ uniform float u_urban_threshold;
 uniform float u_urban_noise_scale;
 uniform int u_urban_octaves;
 uniform float u_urban_noise_weight;
-uniform int u_radar;
 in vec2 v_world;
 out vec4 f_color;
 
 void main() {
-    if (u_radar == 1) {
-        f_color = vec4(u_land, 1.0);
-        return;
-    }
     vec2 span = max(u_land_frame.zw - u_land_frame.xy, vec2(1.0));
     vec2 uv = clamp((v_world - u_land_frame.xy) / span, 0.0, 1.0);
     float field = texture(u_landf, uv).r * u_band_width;

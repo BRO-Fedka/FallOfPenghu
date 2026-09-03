@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from fall_of_penghu.camera import Camera
 from fall_of_penghu.mapdata import LineFeature, MapData, PolyFeature
 from fall_of_penghu.render.static.geom import overlaps, pad_view
+from fall_of_penghu.render.static.radar import RADAR
 
 NORMAL = {
     "sea": (30, 180, 195),
@@ -23,18 +24,6 @@ NORMAL = {
     "hud": (230, 228, 220),
 }
 
-RADAR = {
-    "sea": (4, 10, 12),
-    "taiwan": (20, 70, 68),
-    "land": (18, 56, 54),
-    "forest": (12, 64, 52),
-    "grass": (16, 72, 58),
-    "building": (70, 210, 190),
-    "road": (40, 160, 150),
-    "bridge": (220, 200, 90),
-    "airport": (180, 220, 210),
-    "hud": (160, 230, 220),
-}
 
 BUILDINGS_FADE_FULL_M = 3_200.0
 BUILDINGS_FADE_GONE_M = 5_500.0
@@ -205,12 +194,5 @@ def build_frame(
             if not overlaps(feat.bbox, view):
                 continue
             add_line(feat, pal["airport"], "airports", 2)
-
-    if radar:
-        radar_ids = world.coast_grid.query(*view) if world.coast_grid else []
-        for idx in radar_ids:
-            feat = world.coast[idx]
-            if overlaps(feat.bbox, view):
-                add_poly(feat, pal["hud"], "coast", outline=True, count=False)
 
     return frame
