@@ -17,10 +17,11 @@ class DynamicRenderer:
         entities: Entities,
         screen_w: int,
         screen_h: int,
+        tod: float = 0.5,
     ) -> None:
         if not entities.items:
             return
-        pal = palette_for(camera.radar_mode)
+        pal = palette_for(camera.radar_mode, tod)
         color = pal["hud"]
         layer = pygame.Surface((screen_w, screen_h), pygame.SRCALPHA)
         for item in entities.items:

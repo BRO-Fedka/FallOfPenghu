@@ -17,19 +17,23 @@ class SoftwareMapRenderer:
         self.world = world
         self.surface = surface
         self.radar = False
+        self.tod = 0.5
         self.last_stats: dict[str, int] = {}
 
     def palette(self) -> dict[str, tuple[int, int, int]]:
-        return palette_for(self.radar)
+        return palette_for(self.radar, self.tod)
 
     def resize(self, width: int, height: int, surface: pygame.Surface | None = None) -> None:
         if surface is not None:
             self.surface = surface
         del width, height
 
-    def draw(self, camera: Camera, screen_w: int, screen_h: int) -> dict[str, int]:
+    def draw(
+        self, camera: Camera, screen_w: int, screen_h: int, tod: float = 0.5
+    ) -> dict[str, int]:
         self.radar = camera.radar_mode
-        frame = build_frame(self.world, camera, screen_w, screen_h, self.radar)
+        self.tod = tod
+        frame = build_frame(self.world, camera, screen_w, screen_h, self.radar, tod)
         self.surface.fill(frame.sea)
         for cmd in frame.polys:
             src = cmd.feat.exterior

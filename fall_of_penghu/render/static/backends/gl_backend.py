@@ -336,6 +336,7 @@ class GLMapRenderer:
         self.world = world
         self.ctx = ctx
         self.radar = False
+        self.tod = 0.5
         self.last_stats: dict[str, int] = {}
         self._size = (max(1, size[0]), max(1, size[1]))
         self._t0 = perf_counter()
@@ -455,7 +456,7 @@ class GLMapRenderer:
         _set_uniform(self.prog_map, "u_tint", (1.0, 1.0, 1.0))
 
     def palette(self) -> dict[str, tuple[int, int, int]]:
-        return palette_for(self.radar)
+        return palette_for(self.radar, self.tod)
 
     def _load_cpu_meshes(self) -> None:
         t0 = perf_counter()
@@ -1309,7 +1310,10 @@ class GLMapRenderer:
         return mesh.features
 
     def _draw_shore(
-        self, view: tuple[float, float, float, float], view_w: float
+        self,
+        view: tuple[float, float, float, float],
+        view_w: float,
+        pal: dict[str, tuple[int, int, int]],
     ) -> None:
         if self.radar or self._shore_vao is None:
             return
@@ -1317,7 +1321,7 @@ class GLMapRenderer:
         _set_uniform(self.prog_shore, "u_view", view)
         _set_uniform(self.prog_shore, "u_time", perf_counter() - self._t0)
         _set_uniform(self.prog_shore, "u_view_width", view_w)
-        self.water.bind(_set_uniform, self.prog_shore)
+        self.water.bind(_set_uniform, self.prog_shore, pal)
         self._shore_vao.render(mode=self.mgl.TRIANGLES, vertices=self._shore_nverts)
         self.ctx.disable(self.mgl.BLEND)
 
@@ -1336,7 +1340,7 @@ class GLMapRenderer:
         _set_uniform(self.prog_sea, "u_frame", self._sea_frame)
         _set_uniform(self.prog_sea, "u_max_dist", SEA_MAX_DIST_M)
         _set_uniform(self.prog_sea, "u_tex_size", float(SEA_TEX_SIZE))
-        self.water.bind(_set_uniform, self.prog_sea)
+        self.water.bind(_set_uniform, self.prog_sea, pal)
         self._sea_vao.render(mode=self.mgl.TRIANGLES, vertices=3)
 
     def _draw_mesh(
@@ -1397,10 +1401,13 @@ class GLMapRenderer:
         self._alloc_fbo(width, height)
         self.ctx.viewport = (0, 0, max(1, width), max(1, height))
 
-    def draw(self, camera: Camera, screen_w: int, screen_h: int) -> dict[str, int]:
+    def draw(
+        self, camera: Camera, screen_w: int, screen_h: int, tod: float = 0.5
+    ) -> dict[str, int]:
         if (screen_w, screen_h) != self._size:
             self._alloc_fbo(screen_w, screen_h)
         self.radar = camera.radar_mode
+        self.tod = tod
         pal = self.palette()
         view = camera.world_bounds(screen_w, screen_h)
         view_w = camera.view_width_m
@@ -1425,7 +1432,7 @@ class GLMapRenderer:
         stats["coast"] = self._draw_land(view, pal)
         stats["vegetation"] += self._draw_veg("forest", 1, view, view_w, pal)
         stats["vegetation"] += self._draw_veg("grass", 0, view, view_w, pal)
-        self._draw_shore(view, view_w)
+        self._draw_shore(view, view_w, pal)
 
         road_a = layer_opacity(view_w, ROADS_FADE_FULL_M, ROADS_FADE_GONE_M)
         stats["roads"] += self._draw_mesh("roads", pal["road"], road_a)

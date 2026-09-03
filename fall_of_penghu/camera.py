@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-import math
+GOTO_SMOOTHING = 0.03
+GOTO_MAX_SPEED_M = 15.0
+GOTO_STOP_M = 2.0
+KEYBOARD_TICK_S = 0.001
 
 
 class Camera:
@@ -14,13 +17,13 @@ class Camera:
         view_width_m: float,
         min_view_width_m: float = 300.0,
         max_view_width_m: float = 200_000.0,
-        smooth_tau_s: float = 0.14,
     ) -> None:
         self.min_view_width_m = min_view_width_m
         self.max_view_width_m = max_view_width_m
-        self.smooth_tau_s = smooth_tau_s
         self.frame = (-100_000.0, -100_000.0, 100_000.0, 100_000.0)
         self.radar_mode = False
+        self.debug_mode = False
+        self.flying = False
         self.x = center_x
         self.y = center_y
         self.view_width_m = view_width_m
@@ -44,22 +47,20 @@ class Camera:
     def _clamp_center(
         self, x: float, y: float, width_m: float, screen_w: int, screen_h: int
     ) -> tuple[float, float]:
+        """Allow a map corner at screen center; do not pan a full viewport off-map."""
         minx, miny, maxx, maxy = self.frame
-        mpp = width_m / max(screen_w, 1)
-        half_w = width_m * 0.5
-        half_h = mpp * screen_h * 0.5
-        lo_x = minx + half_w
-        hi_x = maxx - half_w
-        lo_y = miny + half_h
-        hi_y = maxy - half_h
-        if lo_x > hi_x:
+        frame_w = max(1.0, maxx - minx)
+        frame_h = max(1.0, maxy - miny)
+        if frame_w <= width_m:
             x = (minx + maxx) * 0.5
         else:
-            x = min(max(x, lo_x), hi_x)
-        if lo_y > hi_y:
+            x = min(max(x, minx), maxx)
+        mpp = width_m / max(screen_w, 1)
+        view_h = mpp * screen_h
+        if frame_h <= view_h:
             y = (miny + maxy) * 0.5
         else:
-            y = min(max(y, lo_y), hi_y)
+            y = min(max(y, miny), maxy)
         return x, y
 
     def _world_from(
@@ -77,11 +78,15 @@ class Camera:
         wy = y - (sy - screen_h * 0.5) * mpp
         return wx, wy
 
-    def move_to(self, x: float, y: float, view_width_m: float | None = None) -> None:
-        self.target_x = x
-        self.target_y = y
-        if view_width_m is not None:
-            self.target_view_width_m = view_width_m
+    def settle(self, screen_w: int, screen_h: int) -> None:
+        """Clamp the live pose and copy it to targets. Cancels fly-to."""
+        self.flying = False
+        self.view_width_m = self._clamp_width(self.view_width_m, screen_w, screen_h)
+        self.x, self.y = self._clamp_center(
+            self.x, self.y, self.view_width_m, screen_w, screen_h
+        )
+        self.target_x, self.target_y = self.x, self.y
+        self.target_view_width_m = self.view_width_m
 
     def meters_per_pixel(self, screen_w: int) -> float:
         return self.view_width_m / max(screen_w, 1)
@@ -112,18 +117,18 @@ class Camera:
             self.x, self.y, self.view_width_m, sx, sy, screen_w, screen_h
         )
 
-    def pan_pixels(self, dx_px: float, dy_px: float, screen_w: int) -> None:
+    def pan_pixels(self, dx_px: float, dy_px: float, screen_w: int, screen_h: int) -> None:
         mpp = self.meters_per_pixel(screen_w)
-        dx = -dx_px * mpp
-        dy = dy_px * mpp
-        self.x += dx
-        self.y += dy
-        self.target_x += dx
-        self.target_y += dy
+        self.x += -dx_px * mpp
+        self.y += dy_px * mpp
+        self.settle(screen_w, screen_h)
 
-    def pan_world(self, dx_m: float, dy_m: float) -> None:
-        self.target_x += dx_m
-        self.target_y += dy_m
+    def fly_to(self, x: float, y: float, view_width_m: float | None = None) -> None:
+        self.target_x = x
+        self.target_y = y
+        if view_width_m is not None:
+            self.target_view_width_m = view_width_m
+        self.flying = True
 
     def zoom_at_screen(
         self,
@@ -134,26 +139,40 @@ class Camera:
         screen_h: int,
     ) -> None:
         world = self.screen_to_world(sx, sy, screen_w, screen_h)
-        self.target_view_width_m = self._clamp_width(
-            self.target_view_width_m * factor, screen_w, screen_h
-        )
-        mpp = self.target_view_width_m / max(screen_w, 1)
-        self.target_x = world[0] - (sx - screen_w * 0.5) * mpp
-        self.target_y = world[1] + (sy - screen_h * 0.5) * mpp
+        width = self._clamp_width(self.view_width_m * factor, screen_w, screen_h)
+        mpp = width / max(screen_w, 1)
+        self.view_width_m = width
+        self.target_view_width_m = width
+        self.x = world[0] - (sx - screen_w * 0.5) * mpp
+        self.y = world[1] + (sy - screen_h * 0.5) * mpp
+        self.settle(screen_w, screen_h)
 
-    def follow(self, dt: float, screen_w: int, screen_h: int) -> None:
+    def step_fly_to(self, dt: float, screen_w: int, screen_h: int) -> None:
+        if not self.flying:
+            return
         dt = min(max(dt, 0.0), 0.05)
-        k = 1.0 - math.exp(-dt / max(self.smooth_tau_s, 1e-4))
-        self.view_width_m += (self.target_view_width_m - self.view_width_m) * k
-        self.x += (self.target_x - self.x) * k
-        self.y += (self.target_y - self.y) * k
-        self.view_width_m = self._clamp_width(self.view_width_m, screen_w, screen_h)
         self.target_view_width_m = self._clamp_width(
             self.target_view_width_m, screen_w, screen_h
-        )
-        self.x, self.y = self._clamp_center(
-            self.x, self.y, self.view_width_m, screen_w, screen_h
         )
         self.target_x, self.target_y = self._clamp_center(
             self.target_x, self.target_y, self.target_view_width_m, screen_w, screen_h
         )
+        r = 1.0 - pow(GOTO_SMOOTHING, dt)
+        max_step = GOTO_MAX_SPEED_M * (dt / KEYBOARD_TICK_S)
+        self.x += _clamp((self.target_x - self.x) * r, -max_step, max_step)
+        self.y += _clamp((self.target_y - self.y) * r, -max_step, max_step)
+        self.view_width_m += (self.target_view_width_m - self.view_width_m) * r
+        self.view_width_m = self._clamp_width(self.view_width_m, screen_w, screen_h)
+        self.x, self.y = self._clamp_center(
+            self.x, self.y, self.view_width_m, screen_w, screen_h
+        )
+        dist = abs(self.target_x - self.x) + abs(self.target_y - self.y)
+        zoom_err = abs(self.target_view_width_m - self.view_width_m)
+        if dist < GOTO_STOP_M and zoom_err < 1.0:
+            self.x, self.y = self.target_x, self.target_y
+            self.view_width_m = self.target_view_width_m
+            self.flying = False
+
+
+def _clamp(value: float, lo: float, hi: float) -> float:
+    return min(max(value, lo), hi)

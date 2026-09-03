@@ -44,8 +44,12 @@ AIRPORTS_FADE_FULL_M = 60_000.0
 AIRPORTS_FADE_GONE_M = 95_000.0
 
 
-def palette_for(radar: bool) -> dict[str, tuple[int, int, int]]:
-    return RADAR if radar else NORMAL
+def palette_for(radar: bool, tod: float = 0.5) -> dict[str, tuple[int, int, int]]:
+    if radar:
+        return RADAR
+    from fall_of_penghu.render.static.tod import palette_at
+
+    return palette_at(tod)
 
 
 def layer_opacity(view_w: float, full_below: float, gone_above: float) -> float:
@@ -102,8 +106,9 @@ def build_frame(
     screen_w: int,
     screen_h: int,
     radar: bool,
+    tod: float = 0.5,
 ) -> Frame:
-    pal = palette_for(radar)
+    pal = palette_for(radar, tod)
     view = camera.world_bounds(screen_w, screen_h)
     view_w = camera.view_width_m
     mpp = camera.meters_per_pixel(screen_w)

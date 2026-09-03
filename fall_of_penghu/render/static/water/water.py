@@ -7,6 +7,20 @@ def _rgb(c: tuple[int, int, int]) -> tuple[float, float, float]:
     return (c[0] / 255.0, c[1] / 255.0, c[2] / 255.0)
 
 
+def _shift_rgb(
+    color: tuple[int, int, int],
+    noon: tuple[int, int, int],
+    now: tuple[int, int, int],
+) -> tuple[int, int, int]:
+    out: list[int] = []
+    for c, n, m in zip(color, noon, now, strict=True):
+        if n <= 0:
+            out.append(m)
+        else:
+            out.append(int(max(0, min(255, round(c * (m / n))))))
+    return out[0], out[1], out[2]
+
+
 @dataclass
 class WaterParams:
     """Stylized coastal water. Tweak these; uniforms are pushed every frame.
@@ -82,13 +96,27 @@ class WaterParams:
     foam_width_noise: float = 0.45
     foam_noise_scale: float = 0.08
 
-    def bind(self, set_uniform, prog) -> None:
-        set_uniform(prog, "u_water_deep", _rgb(self.water_deep_color))
-        set_uniform(prog, "u_water_mid", _rgb(self.water_mid_color))
-        set_uniform(prog, "u_water_shallow", _rgb(self.water_shallow_color))
-        set_uniform(prog, "u_ripple_cyan", _rgb(self.ripple_cyan))
-        set_uniform(prog, "u_ripple_light", _rgb(self.ripple_light))
-        set_uniform(prog, "u_ripple_white", _rgb(self.ripple_white))
+    def bind(self, set_uniform, prog, pal: dict[str, tuple[int, int, int]] | None = None) -> None:
+        if pal is None:
+            deep = self.water_deep_color
+            mid = self.water_mid_color
+            shallow = self.water_shallow_color
+            ripple_cyan = self.ripple_cyan
+            ripple_light = self.ripple_light
+            ripple_white = self.ripple_white
+        else:
+            deep = pal["sea_deep"]
+            mid = pal["sea"]
+            shallow = pal["sea_shallow"]
+            ripple_cyan = _shift_rgb(self.ripple_cyan, self.water_mid_color, mid)
+            ripple_light = _shift_rgb(self.ripple_light, self.water_mid_color, mid)
+            ripple_white = _shift_rgb(self.ripple_white, self.water_mid_color, mid)
+        set_uniform(prog, "u_water_deep", _rgb(deep))
+        set_uniform(prog, "u_water_mid", _rgb(mid))
+        set_uniform(prog, "u_water_shallow", _rgb(shallow))
+        set_uniform(prog, "u_ripple_cyan", _rgb(ripple_cyan))
+        set_uniform(prog, "u_ripple_light", _rgb(ripple_light))
+        set_uniform(prog, "u_ripple_white", _rgb(ripple_white))
         set_uniform(prog, "u_mesh_width", float(self.mesh_width_m))
         set_uniform(prog, "u_shore_width", float(self.shore_width))
         set_uniform(prog, "u_band_shallow_width", float(self.band_shallow_width))

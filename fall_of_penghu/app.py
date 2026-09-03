@@ -54,6 +54,20 @@ def run() -> None:
         mouse = pygame.mouse.get_pos()
 
         for event in pygame.event.get():
+            if hud.handle_event(event, world.clock, camera.debug_mode):
+                continue
+            if event.type == pygame.MOUSEWHEEL and hud.hits_chrome(
+                *pygame.mouse.get_pos()[:2], screen_h, camera.debug_mode
+            ):
+                continue
+            if (
+                event.type == pygame.MOUSEBUTTONDOWN
+                and event.button == 1
+                and hud.hits_chrome(
+                    *pygame.mouse.get_pos()[:2], screen_h, camera.debug_mode
+                )
+            ):
+                continue
             controls.handle_event(
                 event, camera, world.clock, screen_w, screen_h, mouse
             )
@@ -62,13 +76,14 @@ def run() -> None:
             controls.resize_to = None
             screen_w, screen_h = pygame.display.get_window_size()
 
-        controls.handle_held(camera, dt_wall, screen_w)
+        controls.handle_held(camera, dt_wall, screen_w, screen_h)
         world.clock.advance(dt_wall)
         world.entities.step(world.clock.dt_sim)
-        camera.follow(world.clock.dt_wall, screen_w, screen_h)
+        camera.step_fly_to(dt_wall, screen_w, screen_h)
 
-        stats = renderer.draw(camera, screen_w, screen_h)
-        dynamic.draw(renderer, camera, world.entities, screen_w, screen_h)
+        tod = world.clock.time_of_day
+        stats = renderer.draw(camera, screen_w, screen_h, tod)
+        dynamic.draw(renderer, camera, world.entities, screen_w, screen_h, tod)
         hud.blit(
             renderer,
             camera=camera,
@@ -78,6 +93,7 @@ def run() -> None:
             stats=stats,
             mouse_world=camera.screen_to_world(*mouse, screen_w, screen_h),
             screen_w=screen_w,
+            screen_h=screen_h,
         )
         renderer.present()
 
