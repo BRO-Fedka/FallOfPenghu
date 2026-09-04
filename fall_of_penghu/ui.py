@@ -5,6 +5,7 @@ import pygame
 from fall_of_penghu.camera import Camera
 from fall_of_penghu.render.static.tod import palette_at, phase_label
 from fall_of_penghu.world.clock import DEBUG_SPEED, SPEEDS, Clock
+from fall_of_penghu.world.entities import GameObject
 
 PANEL_H = 40
 DEBUG_H = 44
@@ -72,6 +73,9 @@ class Hud:
         backend: str,
         stats: dict[str, int],
         mouse_world: tuple[float, float],
+        mouse_screen: tuple[int, int],
+        hover: GameObject | None = None,
+        selection_count: int = 0,
         screen_w: int,
         screen_h: int,
     ) -> None:
@@ -125,6 +129,22 @@ class Hud:
 
         renderer.overlay(bar, (0, 0))
 
+        if hover is not None:
+            tip = hover.name
+            if selection_count > 1:
+                tip = f"{tip}  ({selection_count} selected)"
+            text = self.small.render(tip, True, ink)
+            mx, my = mouse_screen
+            tx = min(max(12, mx + 14), screen_w - text.get_width() - 12)
+            ty = min(max(PANEL_H + 8, my + 14), screen_h - text.get_height() - 16)
+            pad = 6
+            box = pygame.Surface(
+                (text.get_width() + pad * 2, text.get_height() + pad * 2), pygame.SRCALPHA
+            )
+            box.fill((8, 10, 12, 200))
+            box.blit(text, (pad, pad))
+            renderer.overlay(box, (tx, ty))
+
         if debug:
             wx, wy = mouse_world
             hud = (
@@ -142,8 +162,8 @@ class Hud:
                 f"b{stats['buildings']} r{stats['roads']}"
             )
             hint = (
-                "WASD pan  LMB drag  Q/E zoom  C/Home fly  R radar  Space 0x  "
-                "F1-F6 speed  F7 32x  F12 debug  Home reset  Esc quit"
+                "WASD pan  LMB select  Shift box  RMB move  Q/E zoom  "
+                "Shift+Del drop port  F12 debug  Esc quit"
             )
             footer = pygame.Surface((screen_w, DEBUG_H), pygame.SRCALPHA)
             footer.fill((8, 10, 12, 170))

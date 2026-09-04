@@ -3,7 +3,9 @@ from __future__ import annotations
 import pygame
 
 from fall_of_penghu.camera import KEYBOARD_TICK_S, Camera
+from fall_of_penghu.selection import DRAG_PX, Selection, pick_at
 from fall_of_penghu.world.clock import DEBUG_SPEED, SPEEDS, Clock
+from fall_of_penghu.world.entities import DynamicObject, Entities, SetRoute
 
 PAN_SPEED_PX = 5.0
 ZOOM_DELTA_DIVISOR = 600.0
@@ -34,21 +36,27 @@ def _zoom_factor(delta: float) -> float:
 
 
 class Input:
-    """Map and clock controls. Does not draw. Does not import shaders."""
+    """Map, clock, and entity commands. Does not draw."""
 
     def __init__(self, home_x: float, home_y: float, home_view_m: float) -> None:
         self.quit = False
-        self.dragging = False
         self.home_x = home_x
         self.home_y = home_y
         self.home_view_m = home_view_m
         self.resize_to: tuple[int, int] | None = None
+        self._lmb_down = False
+        self._press_xy: tuple[int, int] = (0, 0)
+        self._press_obj_id: str | None = None
+        self._panning = False
+        self._box_select = False
 
     def handle_event(
         self,
         event: pygame.event.Event,
         camera: Camera,
         clock: Clock,
+        entities: Entities,
+        selection: Selection,
         screen_w: int,
         screen_h: int,
         mouse: tuple[int, int],
@@ -75,15 +83,32 @@ class Input:
                     clock.cap_to_player_speeds()
             elif event.key in (pygame.K_HOME, pygame.K_c):
                 camera.fly_to(self.home_x, self.home_y, self.home_view_m)
+            elif (
+                camera.debug_mode
+                and event.key in (pygame.K_DELETE, pygame.K_KP_PERIOD)
+                and bool(pygame.key.get_mods() & pygame.KMOD_SHIFT)
+            ):
+                removed = entities.forget_ports(selection.selected)
+                for oid in removed:
+                    selection.selected.discard(oid)
+                    if selection.hover_id == oid:
+                        selection.hover_id = None
+                if removed:
+                    print(
+                        f"debug: removed {len(removed)} port(s) from sites.json",
+                        flush=True,
+                    )
         elif event.type == pygame.MOUSEBUTTONDOWN:
             if event.button == 1:
-                self.dragging = True
+                self._on_lmb_down(event, camera, entities, selection, screen_w, screen_h)
+            elif event.button == 3:
+                self._on_rmb(event, camera, entities, selection, screen_w, screen_h)
         elif event.type == pygame.MOUSEBUTTONUP:
             if event.button == 1:
-                self.dragging = False
+                self._on_lmb_up(event, camera, entities, selection, screen_w, screen_h)
         elif event.type == pygame.MOUSEMOTION:
-            if self.dragging:
-                camera.pan_pixels(event.rel[0], event.rel[1], screen_w, screen_h)
+            if self._lmb_down:
+                self._on_lmb_drag(event, camera, selection, screen_w, screen_h)
         elif event.type == pygame.MOUSEWHEEL:
             delta = -event.y * WHEEL_SCALE
             if abs(delta) < WHEEL_DEADZONE:
@@ -91,6 +116,107 @@ class Input:
             camera.zoom_at_screen(
                 _zoom_factor(delta), *mouse, screen_w, screen_h
             )
+
+    def _on_lmb_down(
+        self,
+        event: pygame.event.Event,
+        camera: Camera,
+        entities: Entities,
+        selection: Selection,
+        screen_w: int,
+        screen_h: int,
+    ) -> None:
+        self._lmb_down = True
+        self._press_xy = event.pos
+        self._panning = False
+        self._box_select = False
+        hit = pick_at(entities, camera, screen_w, screen_h, *event.pos)
+        self._press_obj_id = hit.id if hit else None
+        mods = pygame.key.get_mods()
+        shift = bool(mods & pygame.KMOD_SHIFT)
+        if shift and hit is None:
+            self._box_select = True
+            selection.box = (*event.pos, *event.pos)
+        elif hit is None:
+            self._panning = True
+
+    def _on_lmb_drag(
+        self,
+        event: pygame.event.Event,
+        camera: Camera,
+        selection: Selection,
+        screen_w: int,
+        screen_h: int,
+    ) -> None:
+        if self._box_select:
+            x0, y0 = self._press_xy
+            selection.box = (x0, y0, event.pos[0], event.pos[1])
+            return
+        dx = event.pos[0] - self._press_xy[0]
+        dy = event.pos[1] - self._press_xy[1]
+        if not self._panning and (abs(dx) > DRAG_PX or abs(dy) > DRAG_PX):
+            if self._press_obj_id is None:
+                self._panning = True
+        if self._panning:
+            camera.pan_pixels(event.rel[0], event.rel[1], screen_w, screen_h)
+
+    def _on_lmb_up(
+        self,
+        event: pygame.event.Event,
+        camera: Camera,
+        entities: Entities,
+        selection: Selection,
+        screen_w: int,
+        screen_h: int,
+    ) -> None:
+        mods = pygame.key.get_mods()
+        shift = bool(mods & pygame.KMOD_SHIFT)
+        dx = event.pos[0] - self._press_xy[0]
+        dy = event.pos[1] - self._press_xy[1]
+        moved = abs(dx) > DRAG_PX or abs(dy) > DRAG_PX
+
+        if self._box_select and moved:
+            selection.apply_box(
+                entities,
+                camera,
+                screen_w,
+                screen_h,
+                *selection.box or (*self._press_xy, *event.pos),
+                additive=shift,
+            )
+        elif not moved:
+            if self._press_obj_id:
+                if shift:
+                    selection.toggle(self._press_obj_id)
+                else:
+                    selection.replace(self._press_obj_id)
+            elif not shift:
+                selection.clear()
+
+        self._lmb_down = False
+        self._panning = False
+        self._box_select = False
+        self._press_obj_id = None
+        selection.box = None
+
+    def _on_rmb(
+        self,
+        event: pygame.event.Event,
+        camera: Camera,
+        entities: Entities,
+        selection: Selection,
+        screen_w: int,
+        screen_h: int,
+    ) -> None:
+        if not selection.selected:
+            return
+        wx, wy = camera.screen_to_world(*event.pos, screen_w, screen_h)
+        target = (wx, wy)
+        for oid in list(selection.selected):
+            obj = entities.get(oid)
+            if not isinstance(obj, DynamicObject) or not obj.active:
+                continue
+            entities.dispatch(SetRoute(object_id=oid, mode="auto", target=target))
 
     def handle_held(
         self, camera: Camera, dt_wall: float, screen_w: int, screen_h: int

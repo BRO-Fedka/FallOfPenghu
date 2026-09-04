@@ -3,6 +3,7 @@ from __future__ import annotations
 import pickle
 from array import array
 from dataclasses import dataclass
+from math import hypot
 from pathlib import Path
 from time import perf_counter
 
@@ -388,6 +389,10 @@ class GLMapRenderer:
             vertex_shader=_shader("overlay.vert"),
             fragment_shader=_shader("overlay.frag"),
         )
+        self.prog_overlay_fill = ctx.program(
+            vertex_shader=_shader("overlay_fill.vert"),
+            fragment_shader=_shader("overlay_fill.frag"),
+        )
         self.prog_sea = ctx.program(
             vertex_shader=_shader("sea.vert"),
             fragment_shader=_shader("sea.frag"),
@@ -475,6 +480,11 @@ class GLMapRenderer:
         self._overlay_vao = ctx.vertex_array(
             self.prog_overlay, [(self._overlay_vbo, "2f 2f", "in_pos", "in_uv")]
         )
+        self._overlay_fill_vbo = ctx.buffer(reserve=256, dynamic=True)
+        self._overlay_fill_vao = ctx.vertex_array(
+            self.prog_overlay_fill, [(self._overlay_fill_vbo, "2f", "in_pos")]
+        )
+        self._overlay_tex_cache: dict[tuple[int, int], object] = {}
         self._fbo_tex = None
         self._fbo = None
         self._msaa_fbo = None
@@ -1736,6 +1746,84 @@ class GLMapRenderer:
         _set_uniform(self.prog_post, "u_time", perf_counter() - self._t0)
         self._post_vao.render(mode=self.mgl.TRIANGLES, vertices=3)
 
+    def _overlay_texture(self, width: int, height: int, raw: bytes):
+        key = (width, height)
+        tex = self._overlay_tex_cache.get(key)
+        if tex is None:
+            while len(self._overlay_tex_cache) >= 8:
+                _, old = self._overlay_tex_cache.popitem()
+                old.release()
+            tex = self.ctx.texture((width, height), 4)
+            tex.filter = (self.mgl.NEAREST, self.mgl.NEAREST)
+            self._overlay_tex_cache[key] = tex
+        tex.write(raw)
+        return tex
+
+    def _overlay_quads(self, verts: array, nverts: int, tex) -> None:
+        nbytes = nverts * 16
+        if nbytes > self._overlay_vbo.size:
+            self._overlay_vbo.release()
+            self._overlay_vbo = self.ctx.buffer(reserve=nbytes, dynamic=True)
+            self._overlay_vao = self.ctx.vertex_array(
+                self.prog_overlay, [(self._overlay_vbo, "2f 2f", "in_pos", "in_uv")]
+            )
+        self._overlay_vbo.write(verts.tobytes())
+        self.ctx.enable(self.mgl.BLEND)
+        tex.use(0)
+        _set_uniform(self.prog_overlay, "u_image", 0)
+        _set_uniform(
+            self.prog_overlay, "u_screen", (float(self._size[0]), float(self._size[1]))
+        )
+        self._overlay_vao.render(mode=self.mgl.TRIANGLES, vertices=nverts)
+        self.ctx.disable(self.mgl.BLEND)
+
+    def overlay_aalines(
+        self,
+        polylines: list[list[tuple[float, float]]],
+        color: tuple[int, int, int] | tuple[int, int, int, int],
+    ) -> None:
+        import pygame
+
+        segs: list[tuple[tuple[float, float], tuple[float, float]]] = []
+        minx = miny = 1e9
+        maxx = maxy = -1e9
+        for points in polylines:
+            if len(points) < 2:
+                continue
+            for a, b in zip(points, points[1:]):
+                segs.append((a, b))
+                minx = min(minx, a[0], b[0])
+                miny = min(miny, a[1], b[1])
+                maxx = max(maxx, a[0], b[0])
+                maxy = max(maxy, a[1], b[1])
+        if not segs:
+            return
+        pad = 2
+        left = max(0, int(minx) - pad)
+        top = max(0, int(miny) - pad)
+        right = min(int(self._size[0]), int(maxx) + pad + 1)
+        bottom = min(int(self._size[1]), int(maxy) + pad + 1)
+        width = right - left
+        height = bottom - top
+        if width <= 0 or height <= 0:
+            return
+        surf = getattr(self, "_aa_line_surf", None)
+        if surf is None or surf.get_width() < width or surf.get_height() < height:
+            surf = pygame.Surface((width, height), pygame.SRCALPHA)
+            self._aa_line_surf = surf
+        view = surf.subsurface((0, 0, width, height))
+        view.fill((0, 0, 0, 0))
+        rgb = color[:3]
+        for a, b in segs:
+            pygame.draw.aaline(
+                view,
+                rgb,
+                (a[0] - left, a[1] - top),
+                (b[0] - left, b[1] - top),
+                1,
+            )
+        self.overlay(view, (left, top))
+
     def overlay(self, surface, dest: tuple[int, int] = (0, 0)) -> None:
         import pygame
 
@@ -1743,8 +1831,7 @@ class GLMapRenderer:
         if width <= 0 or height <= 0:
             return
         raw = pygame.image.tobytes(surface, "RGBA", False)
-        tex = self.ctx.texture((width, height), 4, raw)
-        tex.filter = (self.mgl.NEAREST, self.mgl.NEAREST)
+        tex = self._overlay_texture(width, height, raw)
         x, y = dest
         verts = array(
             "f",
@@ -1775,14 +1862,111 @@ class GLMapRenderer:
                 1.0,
             ),
         )
-        self._overlay_vbo.write(verts.tobytes())
+        self._overlay_quads(verts, 6, tex)
+
+    def overlay_sprites(
+        self, strip, dests: list[tuple[int, int]], cell: int
+    ) -> None:
+        import pygame
+
+        n = len(dests)
+        if n <= 0 or cell <= 0:
+            return
+        width, height = strip.get_size()
+        if width < n * cell or height < cell:
+            return
+        raw = pygame.image.tobytes(strip, "RGBA", False)
+        tex = self._overlay_texture(width, height, raw)
+        du = cell / max(width, 1)
+        dv = cell / max(height, 1)
+        verts = array("f")
+        for i, (x, y) in enumerate(dests):
+            u0 = i * du
+            u1 = u0 + du
+            x1 = x + cell
+            y1 = y + cell
+            verts.extend(
+                (
+                    x,
+                    y,
+                    u0,
+                    0.0,
+                    x1,
+                    y,
+                    u1,
+                    0.0,
+                    x1,
+                    y1,
+                    u1,
+                    dv,
+                    x,
+                    y,
+                    u0,
+                    0.0,
+                    x1,
+                    y1,
+                    u1,
+                    dv,
+                    x,
+                    y1,
+                    u0,
+                    dv,
+                )
+            )
+        self._overlay_quads(verts, n * 6, tex)
+
+    def overlay_lines(
+        self,
+        points: list[tuple[float, float]],
+        color: tuple[int, int, int] | tuple[int, int, int, int],
+        width: int = 2,
+    ) -> None:
+        if len(points) < 2:
+            return
+        hw = max(float(width), 1.0) * 0.5
+        verts = array("f")
+        nverts = 0
+        for i in range(len(points) - 1):
+            x0, y0 = points[i]
+            x1, y1 = points[i + 1]
+            dx = x1 - x0
+            dy = y1 - y0
+            length = hypot(dx, dy)
+            if length < 1e-6:
+                continue
+            nx = -dy / length * hw
+            ny = dx / length * hw
+            ax, ay = x0 + nx, y0 + ny
+            bx, by = x0 - nx, y0 - ny
+            cx, cy = x1 - nx, y1 - ny
+            dx2, dy2 = x1 + nx, y1 + ny
+            verts.extend((ax, ay, bx, by, dx2, dy2, bx, by, cx, cy, dx2, dy2))
+            nverts += 6
+        if nverts <= 0:
+            return
+        nbytes = nverts * 8
+        if nbytes > self._overlay_fill_vbo.size:
+            self._overlay_fill_vbo.release()
+            self._overlay_fill_vbo = self.ctx.buffer(reserve=nbytes, dynamic=True)
+            self._overlay_fill_vao = self.ctx.vertex_array(
+                self.prog_overlay_fill, [(self._overlay_fill_vbo, "2f", "in_pos")]
+            )
+        self._overlay_fill_vbo.write(verts.tobytes())
+        r, g, b = color[0], color[1], color[2]
+        a = color[3] / 255.0 if len(color) > 3 else 1.0
         self.ctx.enable(self.mgl.BLEND)
-        tex.use(0)
-        _set_uniform(self.prog_overlay, "u_image", 0)
-        _set_uniform(self.prog_overlay, "u_screen", (float(self._size[0]), float(self._size[1])))
-        self._overlay_vao.render(mode=self.mgl.TRIANGLES, vertices=6)
+        _set_uniform(
+            self.prog_overlay_fill,
+            "u_screen",
+            (float(self._size[0]), float(self._size[1])),
+        )
+        _set_uniform(
+            self.prog_overlay_fill,
+            "u_color",
+            (r / 255.0, g / 255.0, b / 255.0, a),
+        )
+        self._overlay_fill_vao.render(mode=self.mgl.TRIANGLES, vertices=nverts)
         self.ctx.disable(self.mgl.BLEND)
-        tex.release()
 
     def present(self) -> None:
         import pygame

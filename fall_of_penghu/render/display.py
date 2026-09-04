@@ -27,6 +27,23 @@ class MapRenderer(Protocol):
 
     def overlay(self, surface: pygame.Surface, dest: tuple[int, int] = (0, 0)) -> None: ...
 
+    def overlay_sprites(
+        self, strip: pygame.Surface, dests: list[tuple[int, int]], cell: int
+    ) -> None: ...
+
+    def overlay_lines(
+        self,
+        points: list[tuple[float, float]],
+        color: tuple[int, int, int] | tuple[int, int, int, int],
+        width: int = 2,
+    ) -> None: ...
+
+    def overlay_aalines(
+        self,
+        polylines: list[list[tuple[float, float]]],
+        color: tuple[int, int, int] | tuple[int, int, int, int],
+    ) -> None: ...
+
     def present(self) -> None: ...
 
 

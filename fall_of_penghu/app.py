@@ -9,6 +9,7 @@ from fall_of_penghu.camera import Camera
 from fall_of_penghu.input import Input
 from fall_of_penghu.render import create_game_display
 from fall_of_penghu.render.dynamic import DynamicRenderer
+from fall_of_penghu.selection import Selection
 from fall_of_penghu.ui import Hud
 from fall_of_penghu.world import World
 
@@ -32,7 +33,8 @@ def run() -> None:
     world = World.load(MAP_DIR)
     print(
         f"Loaded coast={len(world.map.coast)} veg={len(world.map.vegetation)} "
-        f"buildings={len(world.map.buildings)} roads={len(world.map.roads)}",
+        f"buildings={len(world.map.buildings)} roads={len(world.map.roads)} "
+        f"objects={len(world.entities.items)}",
         flush=True,
     )
 
@@ -45,6 +47,7 @@ def run() -> None:
     camera.set_frame(frame_min[0], frame_min[1], frame_max[0], frame_max[1])
 
     controls = Input(cx, cy, view_w)
+    selection = Selection()
     hud = Hud()
     dynamic = DynamicRenderer()
 
@@ -69,7 +72,14 @@ def run() -> None:
             ):
                 continue
             controls.handle_event(
-                event, camera, world.clock, screen_w, screen_h, mouse
+                event,
+                camera,
+                world.clock,
+                world.entities,
+                selection,
+                screen_w,
+                screen_h,
+                mouse,
             )
         if controls.resize_to is not None:
             display.resize(*controls.resize_to)
@@ -77,13 +87,27 @@ def run() -> None:
             screen_w, screen_h = pygame.display.get_window_size()
 
         controls.handle_held(camera, dt_wall, screen_w, screen_h)
+        if not hud.hits_chrome(*mouse, screen_h, camera.debug_mode):
+            selection.update_hover(
+                world.entities, camera, screen_w, screen_h, *mouse
+            )
+        else:
+            selection.hover_id = None
+
         world.clock.advance(dt_wall)
         world.entities.step(world.clock.dt_sim)
         camera.step_fly_to(dt_wall, screen_w, screen_h)
 
         tod = world.clock.time_of_day
         stats = renderer.draw(camera, screen_w, screen_h, tod)
-        dynamic.draw(renderer, camera, world.entities, screen_w, screen_h, tod)
+        dynamic.draw(
+            renderer, camera, world.entities, selection, screen_w, screen_h, tod
+        )
+        hover = (
+            world.entities.get(selection.hover_id)
+            if selection.hover_id
+            else None
+        )
         hud.blit(
             renderer,
             camera=camera,
@@ -92,6 +116,9 @@ def run() -> None:
             backend=display.gpu.backend,
             stats=stats,
             mouse_world=camera.screen_to_world(*mouse, screen_w, screen_h),
+            mouse_screen=mouse,
+            hover=hover,
+            selection_count=len(selection.selected),
             screen_w=screen_w,
             screen_h=screen_h,
         )

@@ -361,7 +361,7 @@ L0 Magong whole: **55** вызовов, 869 вершин; `fill_km2` ~3068, из
 |---|---|---|---|
 | `world.map` | никто | ничего в рантайме | camera, render, ui, ai |
 | `world.clock` | никто | счётчики в `advance()` | render, camera, ui |
-| `world.entities` | map, clock | позиции, приказы | render, camera, ui, input, ai |
+| `world.entities` | map, clock | позиции, приказы, `sites.json` | render, camera, ui, input, ai |
 | `camera` | map (рамка 200 км) | пан, зум, `radar_mode` | entities, ui, render |
 | `render.static` | map, clock, camera | пиксели земли | input, ui, ai, entities |
 | `render.dynamic` | entities, camera | слой иконок | input, ui, ai |
@@ -379,14 +379,14 @@ Application (`app.py`) — цикл и окно. Меню, сейв и экра�
 
 Папки и файлы:
 
-- `world/` — `world.py` (фасад), `map.py`, `clock.py`, `entities.py`
-- `camera.py`, `input.py`, `ui.py`, `app.py` — отдельные файлы
+- `world/` — `world.py` (фасад), `map.py`, `clock.py`, `entities/` (ObjectManager, GameObject, planner, sites)
+- `camera.py`, `input.py`, `selection.py`, `ui.py`, `app.py` — отдельные файлы
 - `render/display.py` — окно и выбор GL/software
 - `render/static/` — карта (**завершён 2026-09-03**): обычный вид (TOD, море, veg, urban, piers) и радар (отдельный пайплайн, `radar.py`, `radar_contours.py`, `dem.npz`)
   - `backends/` — GL и software (`MapRenderer`)
   - `veg/`, `water/`, `piers/` — слои одной задачи
   - `scene.py`, `geom.py`, `urban.py`, `tod.py`
-- `render/dynamic/` — иконки сущностей
+- `render/dynamic/` — иконки сущностей (`renderer.py`, `icons.py`); исходники в `assets/icons/`
 
 Пустой `ai/taiwan` не заводить. SaveStore — когда появится сейв, не внутри World.
 
@@ -454,4 +454,42 @@ Application (`app.py`) — цикл и окно. Меню, сейв и экра�
 - Аэропорт — только контур, без заливки. Мосты жёлтые.
 - Дороги, растительность, пена берега, городская заливка — не рисуются.
 - Горизонтали — marching squares по `dem.npz` один раз при загрузке, дальше те же мировые отрезки (шаг 10 м). Зум не меняет геометрию. Спека: `RADAR_DEM_SPEC.md`, записка: `RADAR_DEM_NOTE.md`.
+
+---
+
+## 17. Иконки объектов (2026-09-04)
+
+Один PNG на тип, розовый шаблон. Фракционный цвет **не рисуется отдельно**: при первой загрузке для P/C/T с розовых пикселей снимается лишний канал.
+
+| Фракция | Цвет | Что снимается с розового |
+|---|---|---|
+| P игрок | синий | канал R |
+| C Китай | красный | канал B |
+| T Тайвань | зелёный | R и B (остаётся G) |
+
+Розовый = высокий R и B относительно G. Чёрный, серый, белый, чистый зелёный не трогаются. Рисуйте силуэт и маркировку **магентой/розовым**, контур можно чёрным. Не красьте фракцию красным или синим в файле — импорт это не подменит.
+
+Формат: PNG RGBA. Статика обычно 20×20, техника 16×16 — размер не фиксирован, при импорте картинка кладётся **в центр клетки 24×24**, без растягивания. В каждом типе два файла: `map.png` и `radar.png`. Нет радар-файла — берётся `map.png`. Нет папки — геометрический fallback.
+
+Каталог `assets/icons/`:
+
+```text
+assets/icons/static/<имя>/map.png
+assets/icons/static/<имя>/radar.png
+assets/icons/units/<имя>/map.png
+assets/icons/units/<имя>/radar.png
+```
+
+Статические мосты — только пролёты **между разными островами** через воду. OSM-мосты целиком на одном острове остаются геометрией карты, но не `GameObject`. Лишние порты в debug (F12) снимаются с карты **Shift+Delete** и пишутся в `sites.json` (`removed_ports`), повторный collect их не возвращает.
+
+`kind` объекта совпадает с именем папки, кроме: `port` → `static/seaport`, `airfield` → `static/airport`.
+
+| Папка | Сейчас | Дальше |
+|---|---|---|
+| `static/seaport` `airport` `bridge` | есть | `depot` `radar` `aa_battery` `hq` |
+| `units/aaw` | есть | `ship` `usv` `landing_craft` `drone` `missile` `intercept` `mobile_radar` `artillery` `truck` `formation` |
+| контакты (позже) | — | `units/unknown` `units/swarm` |
+
+Не плодить копии на фракцию: один розовый PNG на режим.
+
 

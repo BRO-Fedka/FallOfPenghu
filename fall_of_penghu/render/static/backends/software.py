@@ -144,6 +144,37 @@ class SoftwareMapRenderer:
     def overlay(self, surface: pygame.Surface, dest: tuple[int, int] = (0, 0)) -> None:
         self.surface.blit(surface, dest)
 
+    def overlay_sprites(
+        self, strip: pygame.Surface, dests: list[tuple[int, int]], cell: int
+    ) -> None:
+        if cell <= 0:
+            return
+        for i, dest in enumerate(dests):
+            self.surface.blit(strip, dest, area=pygame.Rect(i * cell, 0, cell, cell))
+
+    def overlay_lines(
+        self,
+        points: list[tuple[float, float]],
+        color: tuple[int, int, int] | tuple[int, int, int, int],
+        width: int = 2,
+    ) -> None:
+        if len(points) < 2:
+            return
+        pts = [(int(x), int(y)) for x, y in points]
+        pygame.draw.lines(self.surface, color[:3], False, pts, max(width, 1))
+
+    def overlay_aalines(
+        self,
+        polylines: list[list[tuple[float, float]]],
+        color: tuple[int, int, int] | tuple[int, int, int, int],
+    ) -> None:
+        rgb = color[:3]
+        for points in polylines:
+            if len(points) < 2:
+                continue
+            for a, b in zip(points, points[1:]):
+                pygame.draw.aaline(self.surface, rgb, a, b, 1)
+
     def present(self) -> None:
         pygame.display.flip()
 

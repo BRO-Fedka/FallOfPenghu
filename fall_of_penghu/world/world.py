@@ -25,4 +25,7 @@ class World:
 
     @classmethod
     def load(cls, map_dir: Path) -> World:
-        return cls(load_map(map_dir))
+        map_dir = Path(map_dir)
+        world = cls(load_map(map_dir))
+        world.entities.populate(world.map)
+        return world
