@@ -425,174 +425,152 @@
     {
       "x": 1648.2914490661788,
       "y": 18545.161877235638
+    },
+    {
+      "x": 4374.164407126084,
+      "y": 15744.757027951442
+    },
+    {
+      "x": 10750.919385189165,
+      "y": 19084.00758723019
+    },
+    {
+      "x": 13506.080076672406,
+      "y": 20586.25251426299
+    },
+    {
+      "x": -877.8718575916209,
+      "y": 1458.9899595122988
+    },
+    {
+      "x": -11296.645854679156,
+      "y": -28759.10866584527
     }
   ],
   "sites": [
     {
       "id": "port_001",
       "kind": "port",
-      "name": "Seaport",
-      "x": -627,
-      "y": 4218
-    },
-    {
-      "id": "port_008",
-      "kind": "port",
-      "name": "Seaport",
+      "name": "Port 1",
       "x": -10646.513761658005,
       "y": -30973.09407044611
     },
     {
-      "id": "port_013",
+      "id": "port_003",
       "kind": "port",
-      "name": "Seaport",
-      "x": -11296.645854679156,
-      "y": -28759.10866584527
-    },
-    {
-      "id": "port_020",
-      "kind": "port",
-      "name": "Seaport",
+      "name": "Port 3",
       "x": 9880.86861394839,
       "y": -24861.387548720442
     },
     {
-      "id": "port_024",
+      "id": "port_004",
       "kind": "port",
-      "name": "Seaport",
+      "name": "Port 4",
       "x": 14675.48132230353,
       "y": -24339.141928828438
     },
     {
-      "id": "port_026",
+      "id": "port_005",
       "kind": "port",
-      "name": "Seaport",
+      "name": "Port 5",
       "x": -1312.5917890223682,
       "y": -24212.61380703679
     },
     {
-      "id": "port_031",
+      "id": "port_006",
       "kind": "port",
-      "name": "Seaport",
+      "name": "Port 6",
       "x": -1452.4344623631296,
       "y": -23057.346978112437
     },
     {
-      "id": "port_035",
+      "id": "port_007",
       "kind": "port",
-      "name": "Seaport",
+      "name": "Port 7",
       "x": -1697.559562150891,
       "y": -12528.837567136827
     },
     {
-      "id": "port_037",
+      "id": "port_008",
       "kind": "port",
-      "name": "Seaport",
+      "name": "Port 8",
       "x": -397.42946767827016,
       "y": -12415.415118805478
     },
     {
-      "id": "port_046",
+      "id": "port_009",
       "kind": "port",
-      "name": "Seaport",
+      "name": "Port 9",
       "x": -21326.480972248515,
       "y": -8605.14086600086
     },
     {
-      "id": "port_047",
+      "id": "port_011",
       "kind": "port",
-      "name": "Seaport",
-      "x": -877.8718575916209,
-      "y": 1458.9899595122988
-    },
-    {
-      "id": "port_058",
-      "kind": "port",
-      "name": "Seaport",
+      "name": "Port 11",
       "x": 11698.759210360004,
       "y": 8599.015714926565
     },
     {
-      "id": "port_064",
+      "id": "port_012",
       "kind": "port",
-      "name": "Seaport",
+      "name": "Port 12",
       "x": 5019.075348073453,
       "y": 9458.542857048691
     },
     {
-      "id": "port_069",
+      "id": "port_013",
       "kind": "port",
-      "name": "Seaport",
+      "name": "Port 13",
       "x": 4022.178272288562,
       "y": 9670.495186047621
     },
     {
-      "id": "port_070",
+      "id": "port_014",
       "kind": "port",
-      "name": "Seaport",
+      "name": "Port 14",
       "x": -4700.167842190705,
       "y": 9714.310003547282
     },
     {
-      "id": "port_081",
+      "id": "port_015",
       "kind": "port",
-      "name": "Seaport",
+      "name": "Port 15",
       "x": 15862.967105604519,
       "y": 11435.8447822124
     },
     {
-      "id": "port_086",
+      "id": "port_016",
       "kind": "port",
-      "name": "Seaport",
+      "name": "Port 16",
       "x": -1391.0399587874272,
       "y": 11785.653303808605
     },
     {
-      "id": "port_096",
+      "id": "port_017",
       "kind": "port",
-      "name": "Seaport",
+      "name": "Port 17",
       "x": 7948.46576544705,
       "y": 15083.862232281179
     },
     {
-      "id": "port_099",
+      "id": "port_021",
       "kind": "port",
-      "name": "Seaport",
-      "x": 4374.79263239912,
-      "y": 15744.676108684413
-    },
-    {
-      "id": "port_106",
-      "kind": "port",
-      "name": "Seaport",
-      "x": 10750.919385189165,
-      "y": 19084.00758723019
-    },
-    {
-      "id": "port_116",
-      "kind": "port",
-      "name": "Seaport",
-      "x": 13506.080076672406,
-      "y": 20586.25251426299
-    },
-    {
-      "id": "port_119",
-      "kind": "port",
-      "name": "Seaport",
+      "name": "Port 21",
       "x": 4499.980317076581,
       "y": 21722.92835666141
     },
     {
-      "id": "port_123",
+      "id": "port_022",
       "kind": "port",
-      "name": "Seaport",
+      "name": "Port 22",
       "x": 2956.746274779718,
       "y": 26770.621987554397
     },
     {
-      "id": "port_129",
+      "id": "port_023",
       "kind": "port",
-      "name": "Seaport",
+      "name": "Port 23",
       "x": 8812.356267094332,
       "y": 29531.247128804134
     },
@@ -621,22 +599,75 @@
       "id": "bridge_01",
       "kind": "bridge",
       "name": "Bridge 1",
-      "x": 1919.9309672028842,
-      "y": 18937.90720075442
+      "x": -631.3944881337229,
+      "y": 19124.35392992082
     },
     {
       "id": "bridge_02",
       "kind": "bridge",
       "name": "Bridge 2",
-      "x": 8096.544881559138,
-      "y": 16487.45939976919
+      "x": 1919.9309672028842,
+      "y": 18937.90720075442
     },
     {
       "id": "bridge_03",
       "kind": "bridge",
       "name": "Bridge 3",
+      "x": 8096.544881559138,
+      "y": 16487.45939976919
+    },
+    {
+      "id": "bridge_04",
+      "kind": "bridge",
+      "name": "Bridge 4",
       "x": 8813.733088445746,
       "y": 14617.097206266497
+    },
+    {
+      "id": "dbg_port_001",
+      "kind": "port",
+      "name": "Port",
+      "x": -632.3745671196389,
+      "y": 4224.25340754694
+    },
+    {
+      "id": "dbg_port_002",
+      "kind": "port",
+      "name": "Port",
+      "x": 4389.145999205964,
+      "y": 15757.154426019286
+    },
+    {
+      "id": "dbg_port_003",
+      "kind": "port",
+      "name": "Port",
+      "faction": "P",
+      "x": 10735.33413996187,
+      "y": 19092.196403647642
+    },
+    {
+      "id": "dbg_port_004",
+      "kind": "port",
+      "name": "Port",
+      "faction": "P",
+      "x": 13548.711030781153,
+      "y": 20603.633484915183
+    },
+    {
+      "id": "dbg_port_005",
+      "kind": "port",
+      "name": "Port",
+      "faction": "P",
+      "x": -858.4772534047471,
+      "y": 1468.2318982106806
+    },
+    {
+      "id": "dbg_port_006",
+      "kind": "port",
+      "name": "Port",
+      "faction": "P",
+      "x": -11232.653437333633,
+      "y": -28791.69411532229
     }
   ],
   "units": [
@@ -651,16 +682,6 @@
       "mobility": "sea"
     },
     {
-      "id": "drone_1",
-      "kind": "drone",
-      "name": "Recon UAV",
-      "x": 7913.687382494552,
-      "y": 9847.772860889563,
-      "heading": 0.0,
-      "speed_mps": 30.0,
-      "mobility": "air"
-    },
-    {
       "id": "aa_1",
       "kind": "aaw",
       "name": "AAW",
@@ -669,6 +690,221 @@
       "heading": 0.0,
       "speed_mps": 11.0,
       "mobility": "land"
+    },
+    {
+      "id": "dbg_ship_003",
+      "kind": "ship",
+      "name": "Ship",
+      "faction": "C",
+      "x": -9546.682098765432,
+      "y": 39224.90959811525,
+      "heading": 0.0,
+      "speed_mps": 7.5,
+      "mobility": "sea"
+    },
+    {
+      "id": "dbg_ship_005",
+      "kind": "ship",
+      "name": "Ship",
+      "faction": "C",
+      "x": -20625.0,
+      "y": 13148.281815336326,
+      "heading": 0.0,
+      "speed_mps": 7.5,
+      "mobility": "sea"
+    },
+    {
+      "id": "dbg_ship_007",
+      "kind": "ship",
+      "name": "Ship",
+      "faction": "C",
+      "x": -28750.0,
+      "y": -27270.330298484125,
+      "heading": 0.0,
+      "speed_mps": 7.5,
+      "mobility": "sea"
+    },
+    {
+      "id": "dbg_ship_008",
+      "kind": "ship",
+      "name": "Ship",
+      "faction": "C",
+      "x": -4687.5,
+      "y": -47166.16363181746,
+      "heading": 0.0,
+      "speed_mps": 7.5,
+      "mobility": "sea"
+    },
+    {
+      "id": "dbg_aaw_001",
+      "kind": "aaw",
+      "name": "AAW",
+      "faction": "P",
+      "x": -4342.711630181374,
+      "y": 10104.647835354028,
+      "heading": 0.0,
+      "speed_mps": 11.0,
+      "mobility": "land"
+    },
+    {
+      "id": "dbg_aaw_002",
+      "kind": "aaw",
+      "name": "AAW",
+      "faction": "P",
+      "x": 8483.700120830426,
+      "y": 29734.238912275843,
+      "heading": 0.0,
+      "speed_mps": 11.0,
+      "mobility": "land"
+    },
+    {
+      "id": "dbg_aaw_003",
+      "kind": "aaw",
+      "name": "AAW",
+      "faction": "P",
+      "x": -10148.185806598718,
+      "y": -29536.40641733695,
+      "heading": 0.0,
+      "speed_mps": 11.0,
+      "mobility": "land"
+    },
+    {
+      "id": "dbg_aaw_004",
+      "kind": "aaw",
+      "name": "AAW",
+      "faction": "P",
+      "x": -2306.3269769815097,
+      "y": -11240.797292451054,
+      "heading": 0.0,
+      "speed_mps": 11.0,
+      "mobility": "land"
+    },
+    {
+      "id": "dbg_aaw_005",
+      "kind": "aaw",
+      "name": "AAW",
+      "faction": "P",
+      "x": 3067.014647990969,
+      "y": 20570.915855110517,
+      "heading": 0.0,
+      "speed_mps": 11.0,
+      "mobility": "land"
+    },
+    {
+      "id": "dbg_aa_pickup_001",
+      "kind": "aa_pickup",
+      "name": "AA pickup",
+      "faction": "P",
+      "x": -3554.521243240272,
+      "y": 10383.615812805587,
+      "heading": 0.0,
+      "speed_mps": 13.0,
+      "mobility": "land"
+    },
+    {
+      "id": "dbg_truck_001",
+      "kind": "truck",
+      "name": "Truck",
+      "faction": "P",
+      "x": 13673.80086011893,
+      "y": 7691.559506380106,
+      "heading": 0.0,
+      "speed_mps": 12.0,
+      "mobility": "land"
+    },
+    {
+      "id": "dbg_ferry_001",
+      "kind": "ferry",
+      "name": "Ferry",
+      "faction": "P",
+      "x": 12773.121965649443,
+      "y": 8005.231973647898,
+      "heading": 0.0,
+      "speed_mps": 8.0,
+      "mobility": "sea"
+    },
+    {
+      "id": "dbg_infantry_001",
+      "kind": "infantry",
+      "name": "Infantry",
+      "faction": "P",
+      "x": -4658.009950013422,
+      "y": 10094.630664367458,
+      "heading": 0.0,
+      "speed_mps": 4.0,
+      "mobility": "land"
+    },
+    {
+      "id": "dbg_infantry_002",
+      "kind": "infantry",
+      "name": "Infantry",
+      "faction": "P",
+      "x": -5124.9934850782265,
+      "y": 10030.951091404075,
+      "heading": 0.0,
+      "speed_mps": 4.0,
+      "mobility": "land"
+    },
+    {
+      "id": "dbg_infantry_003",
+      "kind": "infantry",
+      "name": "Infantry",
+      "faction": "P",
+      "x": -4106.275068406344,
+      "y": 10551.849109126462,
+      "heading": 0.0,
+      "speed_mps": 4.0,
+      "mobility": "land"
+    },
+    {
+      "id": "dbg_scout_001",
+      "kind": "scout",
+      "name": "Scout",
+      "faction": "P",
+      "x": 3215.328516888518,
+      "y": 15883.265386771869,
+      "heading": 0.0,
+      "speed_mps": 18.0,
+      "mobility": "air"
+    },
+    {
+      "id": "dbg_scout_002",
+      "kind": "scout",
+      "name": "Scout",
+      "faction": "P",
+      "x": 3344.586818394692,
+      "y": 15733.782997274937,
+      "heading": 0.0,
+      "speed_mps": 18.0,
+      "mobility": "air"
     }
+  ],
+  "removed_ids": [
+    "c_truck_2",
+    "c_aaw_2",
+    "c_truck_1",
+    "c_aaw_1",
+    "c_truck_3",
+    "port_019",
+    "port_020",
+    "port_010",
+    "port_002",
+    "dbg_aaw_006",
+    "drone_1",
+    "dbg_drone_001",
+    "dbg_drone_009",
+    "dbg_drone_005",
+    "dbg_drone_006",
+    "dbg_drone_003",
+    "dbg_drone_008",
+    "dbg_drone_007",
+    "dbg_drone_002",
+    "dbg_drone_004",
+    "dbg_ship_006",
+    "dbg_ship_002",
+    "dbg_ship_001",
+    "dbg_ship_004",
+    "dbg_ship_009",
+    "ferry_001"
   ]
 }

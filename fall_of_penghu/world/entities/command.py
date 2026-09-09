@@ -16,4 +16,10 @@ class Halt:
     object_id: str
 
 
-Command = SetRoute | Halt
+@dataclass(frozen=True)
+class SetDoctrine:
+    object_id: str
+    doctrine: str
+
+
+Command = SetRoute | Halt | SetDoctrine

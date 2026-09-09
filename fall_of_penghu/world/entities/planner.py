@@ -3,17 +3,30 @@ from __future__ import annotations
 from heapq import heappop, heappush
 from math import hypot
 
+from collections.abc import Callable
+
 from fall_of_penghu.world.entities.command import SetRoute
 from fall_of_penghu.world.entities.dynamic import DynamicObject
+from fall_of_penghu.world.entities.land import LandRouter
+from fall_of_penghu.world.entities.land.limits import (
+    ASTAR_MAX_ITERS,
+    SEA_ASTAR_MAX_ITERS,
+    SearchLimitError,
+    tick,
+    unwind,
+)
 from fall_of_penghu.world.entities.route import Route
 from fall_of_penghu.world.map import MapData, PolyFeature
 
 LAND_SNAP_M = 12.0
-LAND_SAMPLE_M = 40.0
-LAND_OFFROAD_COST = 1.55
+LAND_SAMPLE_M = 16.0
+LAND_DIRECT_M = 80.0
+LAND_OFFROAD_COST = 3.2
 SEA_CELL_M = 150.0
 SEA_SAMPLE_M = 80.0
-SEA_PAD_M = 2_000.0
+SEA_PAD_M = 8_000.0
+SEA_WEST_M = 58_000.0
+SEA_MIN_SPAN_M = 70_000.0
 
 
 def _point_in_ring(x: float, y: float, ring: list[tuple[float, float]]) -> bool:
@@ -57,25 +70,39 @@ class Planner:
         self._sea_block: list[bool] = []
         self._land_walk: list[bool] = []
         self._road_cells: set[int] = set()
-        self._build_land()
+        self.land = LandRouter(world)
         self._build_sea()
-        self._build_land_walk()
 
-    def plan(self, unit: DynamicObject, cmd: SetRoute) -> Route | None:
+    def plan(
+        self,
+        unit: DynamicObject,
+        cmd: SetRoute,
+        *,
+        intact: Callable[[str], bool] | None = None,
+    ) -> Route | None:
         start = (unit.x, unit.y)
-        if cmd.mode == "manual" and cmd.vertices:
-            return self._constrain(unit.mobility, start, list(cmd.vertices))
-        if cmd.target is None:
+        check = intact or (lambda _oid: True)
+        try:
+            if cmd.mode == "manual" and cmd.vertices:
+                return self._constrain(unit.mobility, start, list(cmd.vertices), check)
+            if cmd.target is None:
+                return None
+            return self._auto(unit.mobility, start, cmd.target, check)
+        except SearchLimitError as exc:
+            print(f"route search limit: {exc}", flush=True)
             return None
-        return self._auto(unit.mobility, start, cmd.target)
 
     def _auto(
-        self, mobility: str, start: tuple[float, float], goal: tuple[float, float]
+        self,
+        mobility: str,
+        start: tuple[float, float],
+        goal: tuple[float, float],
+        intact: Callable[[str], bool],
     ) -> Route | None:
         if mobility == "air":
             return self._air([start, goal])
         if mobility == "land":
-            return self._land_path(start, goal)
+            return self.land.plan(start, goal, intact)
         if mobility == "sea":
             return self._sea_path(start, goal)
         return None
@@ -85,6 +112,7 @@ class Planner:
         mobility: str,
         start: tuple[float, float],
         vertices: list[tuple[float, float]],
+        intact: Callable[[str], bool],
     ) -> Route | None:
         if not vertices:
             return None
@@ -94,7 +122,7 @@ class Planner:
         chain = [start, *vertices]
         parts: list[tuple[float, float]] = []
         for a, b in zip(chain, chain[1:]):
-            hop = self._auto(mobility, a, b)
+            hop = self._auto(mobility, a, b, intact)
             if hop is None:
                 return None
             if parts and hop.points[0] == parts[-1]:
@@ -273,11 +301,16 @@ class Planner:
                 n = max(1, int(length / step))
                 for k in range(n + 1):
                     t = k / n
-                    i = self._cell_index(a[0] + dx * t, a[1] + dy * t)
+                    x = a[0] + dx * t
+                    y = a[1] + dy * t
+                    i = self._cell_index(x, y)
                     if i is None:
                         continue
-                    self._land_walk[i] = True
-                    self._road_cells.add(i)
+                    cx, cy = self._sea_xy(i)
+                    on_land = self.is_land(cx, cy)
+                    if on_land or road.bridge:
+                        self._land_walk[i] = True
+                        self._road_cells.add(i)
 
     def _nearest_walk_cell(self, x: float, y: float) -> int | None:
         if not self._land_ok(x, y):
@@ -308,6 +341,56 @@ class Planner:
                 return best_i
         return None
 
+    def _extend_pts(
+        self, pts: list[tuple[float, float]], extra: list[tuple[float, float]]
+    ) -> None:
+        for pt in extra:
+            if not pts or pt != pts[-1]:
+                pts.append(pt)
+
+    def _land_connect(
+        self, a: tuple[float, float], b: tuple[float, float]
+    ) -> list[tuple[float, float]] | None:
+        if a == b:
+            return [a]
+        if not self._seg_leaves_land(a, b):
+            return [a, b]
+        return self._land_grid_points(a, b)
+
+    def _land_grid_points(
+        self, start: tuple[float, float], goal: tuple[float, float]
+    ) -> list[tuple[float, float]] | None:
+        sa = self._nearest_walk_cell(*start)
+        sb = self._nearest_walk_cell(*goal)
+        if sa is None or sb is None:
+            return None
+        pts: list[tuple[float, float]] = [start]
+        if sa == sb:
+            mid = self._sea_xy(sa)
+            if mid != pts[-1] and not self._seg_leaves_land(pts[-1], mid):
+                pts.append(mid)
+            if goal != pts[-1] and not self._seg_leaves_land(pts[-1], goal):
+                pts.append(goal)
+                return pts if len(pts) >= 2 else None
+            if goal != pts[-1] and self._land_ok(*goal) and not self._seg_leaves_land(start, goal):
+                return [start, goal]
+            return None
+        came = self._astar_land(sa, sb)
+        if came is None:
+            return None
+        for i in came:
+            pt = self._sea_xy(i)
+            if pt == pts[-1]:
+                continue
+            if self._seg_leaves_land(pts[-1], pt):
+                return None
+            pts.append(pt)
+        if goal != pts[-1]:
+            if self._seg_leaves_land(pts[-1], goal):
+                return None
+            pts.append(goal)
+        return pts if len(pts) >= 2 else None
+
     def _land_path(
         self, start: tuple[float, float], goal: tuple[float, float]
     ) -> Route | None:
@@ -315,38 +398,50 @@ class Planner:
             return None
         if hypot(goal[0] - start[0], goal[1] - start[1]) <= 1.0:
             return None
-        if not self._seg_leaves_land(start, goal):
+        if (
+            hypot(goal[0] - start[0], goal[1] - start[1]) <= LAND_DIRECT_M
+            and not self._seg_leaves_land(start, goal)
+        ):
             return Route([start, goal])
-        sa = self._nearest_walk_cell(*start)
-        sb = self._nearest_walk_cell(*goal)
-        if sa is None or sb is None:
-            return None
-        if sa == sb:
-            mid = self._sea_xy(sa)
-            pts = [start]
-            if mid != pts[-1]:
-                pts.append(mid)
-            if goal != pts[-1]:
-                pts.append(goal)
-            return Route(pts) if len(pts) >= 2 else None
-        came = self._astar_land(sa, sb)
-        if came is None:
-            return None
-        pts = [start]
-        for i in came:
-            pt = self._sea_xy(i)
-            if pt != pts[-1]:
-                pts.append(pt)
-        if goal != pts[-1]:
-            pts.append(goal)
+        sa = self._nearest_land(*start)
+        sb = self._nearest_land(*goal)
+        if sa is None or sb is None or not self._land_nodes:
+            pts = self._land_grid_points(start, goal)
+            return Route(pts) if pts and len(pts) >= 2 else None
+        pts: list[tuple[float, float]] = []
+        hop = self._land_connect(start, self._land_nodes[sa])
+        if hop is None:
+            pts = self._land_grid_points(start, goal)
+            return Route(pts) if pts and len(pts) >= 2 else None
+        self._extend_pts(pts, hop)
+        if sa != sb:
+            nodes = self._astar_nodes(sa, sb, self._land_nodes, self._land_adj)
+            if nodes is None:
+                pts = self._land_grid_points(start, goal)
+                return Route(pts) if pts and len(pts) >= 2 else None
+            for ia, ib in zip(nodes, nodes[1:]):
+                a = self._land_nodes[ia]
+                b = self._land_nodes[ib]
+                hop = self._land_connect(a, b)
+                if hop is None:
+                    pts = self._land_grid_points(start, goal)
+                    return Route(pts) if pts and len(pts) >= 2 else None
+                self._extend_pts(pts, hop)
+        hop = self._land_connect(pts[-1], goal)
+        if hop is None:
+            pts = self._land_grid_points(start, goal)
+            return Route(pts) if pts and len(pts) >= 2 else None
+        self._extend_pts(pts, hop)
         return Route(pts) if len(pts) >= 2 else None
 
     def _build_sea(self) -> None:
         bbox = self._map.manifest.get("bbox_penghu") or [-22000, -32000, 21000, 35000]
-        minx = float(bbox[0]) - SEA_PAD_M
+        minx = float(bbox[0]) - max(SEA_PAD_M, SEA_WEST_M)
         miny = float(bbox[1]) - SEA_PAD_M
         maxx = float(bbox[2]) + SEA_PAD_M
         maxy = float(bbox[3]) + SEA_PAD_M
+        minx, maxx = _span_axis(minx, maxx, SEA_MIN_SPAN_M)
+        miny, maxy = _span_axis(miny, maxy, SEA_MIN_SPAN_M)
         cell = SEA_CELL_M
         w = max(2, int((maxx - minx) / cell) + 1)
         h = max(2, int((maxy - miny) / cell) + 1)
@@ -396,9 +491,13 @@ class Planner:
                 return True
         return False
 
-    def _nearest_sea_index(self, x: float, y: float) -> int | None:
-        if self.is_land(x, y):
+    def nearest_water(self, x: float, y: float) -> tuple[float, float] | None:
+        idx = self._nearest_sea_index(x, y)
+        if idx is None:
             return None
+        return self._sea_xy(idx)
+
+    def _nearest_sea_index(self, x: float, y: float) -> int | None:
         gx = int((x - self._sea_origin[0]) / SEA_CELL_M)
         gy = int((y - self._sea_origin[1]) / SEA_CELL_M)
         w, h = self._sea_w, self._sea_h
@@ -428,18 +527,24 @@ class Planner:
     def _sea_path(
         self, start: tuple[float, float], goal: tuple[float, float]
     ) -> Route | None:
-        if self.is_land(*start) or self.is_land(*goal):
-            return None
-        if not self._seg_hits_land(start, goal):
-            return Route([start, goal])
         sa = self._nearest_sea_index(*start)
         sb = self._nearest_sea_index(*goal)
         if sa is None or sb is None:
             return None
+        berth_a = self._sea_xy(sa)
+        berth_b = self._sea_xy(sb)
+        pts: list[tuple[float, float]] = [start]
+        if berth_a != pts[-1]:
+            pts.append(berth_a)
+        if not self._seg_hits_land(berth_a, berth_b):
+            if berth_b != pts[-1]:
+                pts.append(berth_b)
+            if goal != pts[-1]:
+                pts.append(goal)
+            return Route(pts) if len(pts) >= 2 else None
         came = self._astar_sea(sa, sb)
         if came is None:
             return None
-        pts = [start]
         for i in came:
             pt = self._sea_xy(i)
             if pt != pts[-1]:
@@ -459,15 +564,12 @@ class Planner:
         heap: list[tuple[float, int]] = [(0.0, start)]
         cost = {start: 0.0}
         prev: dict[int, int] = {}
+        steps = 0
         while heap:
+            steps = tick("planner.astar_nodes", steps, ASTAR_MAX_ITERS)
             _, u = heappop(heap)
             if u == goal:
-                path = [u]
-                while u in prev:
-                    u = prev[u]
-                    path.append(u)
-                path.reverse()
-                return path
+                return unwind(prev, u, "planner.astar_nodes")
             for v, w in adj[u]:
                 nxt = cost[u] + w
                 if nxt < cost.get(v, 1e30):
@@ -484,15 +586,12 @@ class Planner:
         cost = {start: 0.0}
         prev: dict[int, int] = {}
         block = self._sea_block
+        steps = 0
         while heap:
+            steps = tick("planner.astar_sea", steps, SEA_ASTAR_MAX_ITERS)
             _, u = heappop(heap)
             if u == goal:
-                path = [u]
-                while u in prev:
-                    u = prev[u]
-                    path.append(u)
-                path.reverse()
-                return path
+                return unwind(prev, u, "planner.astar_sea")
             ux, uy = u % w, u // w
             for dx, dy, step in (
                 (-1, 0, 1.0),
@@ -525,15 +624,12 @@ class Planner:
         prev: dict[int, int] = {}
         walk = self._land_walk
         roads = self._road_cells
+        steps = 0
         while heap:
+            steps = tick("planner.astar_land", steps, ASTAR_MAX_ITERS)
             _, u = heappop(heap)
             if u == goal:
-                path = [u]
-                while u in prev:
-                    u = prev[u]
-                    path.append(u)
-                path.reverse()
-                return path
+                return unwind(prev, u, "planner.astar_land")
             ux, uy = u % w, u // w
             for dx, dy, step in (
                 (-1, 0, 1.0),
@@ -551,6 +647,10 @@ class Planner:
                 v = vy * w + vx
                 if not walk[v]:
                     continue
+                ux_m, uy_m = self._sea_xy(u)
+                vx_m, vy_m = self._sea_xy(v)
+                if self._seg_leaves_land((ux_m, uy_m), (vx_m, vy_m)):
+                    continue
                 terrain = 1.0 if v in roads else LAND_OFFROAD_COST
                 nxt = cost[u] + step * terrain
                 if nxt < cost.get(v, 1e30):
@@ -558,3 +658,11 @@ class Planner:
                     prev[v] = u
                     heappush(heap, (nxt + hypot(vx - gx, vy - gy) * terrain, v))
         return None
+
+
+def _span_axis(lo: float, hi: float, minimum: float) -> tuple[float, float]:
+    if hi - lo >= minimum:
+        return lo, hi
+    mid = (lo + hi) * 0.5
+    half = minimum * 0.5
+    return mid - half, mid + half

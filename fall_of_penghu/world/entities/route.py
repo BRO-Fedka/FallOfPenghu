@@ -10,7 +10,21 @@ class Route:
 
     points: list[tuple[float, float]]
     s: float = 0.0
+    bridges: list[tuple[float, float, str]] = field(default_factory=list)
     length: float = field(init=False)
+
+    def bridge_at(self, s: float) -> str | None:
+        for start, end, oid in self.bridges:
+            if start <= s < end:
+                return oid
+        return None
+
+    def bridge_entering(self, s: float, ds: float) -> str | None:
+        nxt = s + max(ds, 0.0)
+        for start, end, oid in self.bridges:
+            if s < start <= nxt:
+                return oid
+        return None
 
     def __post_init__(self) -> None:
         if len(self.points) < 2:

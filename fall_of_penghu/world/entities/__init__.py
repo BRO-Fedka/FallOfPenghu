@@ -1,4 +1,6 @@
-from fall_of_penghu.world.entities.command import Command, Halt, SetRoute
+from fall_of_penghu.world.entities.command import Command, Halt, SetDoctrine, SetRoute
+from fall_of_penghu.world.entities.intercept import Intercept
+from fall_of_penghu.world.entities.tracer import Tracer
 from fall_of_penghu.world.entities.dynamic import DynamicObject
 from fall_of_penghu.world.entities.game_object import (
     FACTION_CHINA,
@@ -22,9 +24,12 @@ __all__ = [
     "FACTION_TAIWAN",
     "GameObject",
     "Halt",
+    "Intercept",
     "ObjectManager",
     "Planner",
     "Route",
+    "SetDoctrine",
     "SetRoute",
     "StaticObject",
+    "Tracer",
 ]

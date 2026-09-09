@@ -26,3 +26,7 @@ class GameObject:
     heading: float = 0.0
     active: bool = True
     orient_icon: bool = False
+    orient_radar: bool = False
+    hp: float = 1.0
+    max_hp: float = 1.0
+    ferries: int = 0

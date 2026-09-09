@@ -23,6 +23,7 @@ class Camera:
         self.frame = (-100_000.0, -100_000.0, 100_000.0, 100_000.0)
         self.radar_mode = False
         self.debug_mode = False
+        self.show_engagement = False
         self.flying = False
         self.x = center_x
         self.y = center_y

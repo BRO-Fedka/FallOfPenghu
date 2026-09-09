@@ -5,10 +5,16 @@ DEFAULT_K = 4.0
 # Calendar seconds per simulation second. 8 sim hours = 24 calendar hours.
 CALENDAR_PER_SIM = 3.0
 CALENDAR_DAY_S = 86_400.0
+# Matches map TOD: civil day from 05:00 to the start of night at 18:15.
+DAYLIGHT_START = 5.0 / 24.0
+DAYLIGHT_END = 18.25 / 24.0
 
 # F1–F6. F7 (32x) is debug-only.
 SPEEDS = (0.0, 1.0, 2.0, 4.0, 8.0, 16.0)
 DEBUG_SPEED = 32.0
+# Matches TOD keyframes: day from 05:00 through the start of dusk.
+DAY_START = 5.0 / 24.0
+DAY_END = 18.25 / 24.0
 
 
 class Clock:
@@ -43,8 +49,18 @@ class Clock:
         return (self.calendar_time / CALENDAR_DAY_S) % 1.0
 
     @property
+    def is_daylight(self) -> bool:
+        t = self.time_of_day
+        return DAY_START <= t < DAY_END
+
+    @property
     def calendar_day(self) -> int:
         return int(self.calendar_time // CALENDAR_DAY_S)
+
+    @property
+    def is_daylight(self) -> bool:
+        t = self.time_of_day
+        return DAYLIGHT_START <= t < DAYLIGHT_END
 
     def toggle_pause(self) -> None:
         if self.speed == 0.0:

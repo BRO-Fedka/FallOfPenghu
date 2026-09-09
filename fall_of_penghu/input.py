@@ -5,7 +5,12 @@ import pygame
 from fall_of_penghu.camera import KEYBOARD_TICK_S, Camera
 from fall_of_penghu.selection import DRAG_PX, Selection, pick_at
 from fall_of_penghu.world.clock import DEBUG_SPEED, SPEEDS, Clock
-from fall_of_penghu.world.entities import DynamicObject, Entities, SetRoute
+from fall_of_penghu.world.entities import (
+    DynamicObject,
+    Entities,
+    FACTION_PLAYER,
+    SetRoute,
+)
 
 PAN_SPEED_PX = 5.0
 ZOOM_DELTA_DIVISOR = 600.0
@@ -60,6 +65,8 @@ class Input:
         screen_w: int,
         screen_h: int,
         mouse: tuple[int, int],
+        place_kind: str | None = None,
+        place_faction: str | None = None,
     ) -> None:
         if event.type == pygame.QUIT:
             self.quit = True
@@ -70,6 +77,8 @@ class Input:
                 self.quit = True
             elif event.key == pygame.K_r:
                 camera.radar_mode = not camera.radar_mode
+            elif event.key == pygame.K_g:
+                camera.show_engagement = not camera.show_engagement
             elif event.key == pygame.K_SPACE:
                 clock.toggle_pause()
             elif event.key in SPEED_KEYS:
@@ -88,24 +97,42 @@ class Input:
                 and event.key in (pygame.K_DELETE, pygame.K_KP_PERIOD)
                 and bool(pygame.key.get_mods() & pygame.KMOD_SHIFT)
             ):
-                removed = entities.forget_ports(selection.selected)
+                removed = entities.forget_objects(selection.selected)
                 for oid in removed:
                     selection.selected.discard(oid)
                     if selection.hover_id == oid:
                         selection.hover_id = None
                 if removed:
                     print(
-                        f"debug: removed {len(removed)} port(s) from sites.json",
+                        f"debug: removed {len(removed)} object(s) from sites.json",
                         flush=True,
                     )
         elif event.type == pygame.MOUSEBUTTONDOWN:
             if event.button == 1:
-                self._on_lmb_down(event, camera, entities, selection, screen_w, screen_h)
+                self._on_lmb_down(
+                    event,
+                    camera,
+                    entities,
+                    selection,
+                    screen_w,
+                    screen_h,
+                    place_kind,
+                    place_faction,
+                )
             elif event.button == 3:
                 self._on_rmb(event, camera, entities, selection, screen_w, screen_h)
         elif event.type == pygame.MOUSEBUTTONUP:
             if event.button == 1:
-                self._on_lmb_up(event, camera, entities, selection, screen_w, screen_h)
+                self._on_lmb_up(
+                    event,
+                    camera,
+                    entities,
+                    selection,
+                    screen_w,
+                    screen_h,
+                    place_kind,
+                    place_faction,
+                )
         elif event.type == pygame.MOUSEMOTION:
             if self._lmb_down:
                 self._on_lmb_drag(event, camera, selection, screen_w, screen_h)
@@ -125,12 +152,28 @@ class Input:
         selection: Selection,
         screen_w: int,
         screen_h: int,
+        place_kind: str | None,
+        place_faction: str | None = None,
     ) -> None:
         self._lmb_down = True
         self._press_xy = event.pos
         self._panning = False
         self._box_select = False
-        hit = pick_at(entities, camera, screen_w, screen_h, *event.pos)
+        self._press_obj_id = None
+        if place_kind:
+            return
+        if selection.port_cmd:
+            return
+        hit = pick_at(
+            entities,
+            camera,
+            screen_w,
+            screen_h,
+            *event.pos,
+            own_only=not camera.debug_mode,
+            source=list(entities.items) if camera.debug_mode else None,
+            include_intercept=camera.debug_mode,
+        )
         self._press_obj_id = hit.id if hit else None
         mods = pygame.key.get_mods()
         shift = bool(mods & pygame.KMOD_SHIFT)
@@ -157,6 +200,8 @@ class Input:
         if not self._panning and (abs(dx) > DRAG_PX or abs(dy) > DRAG_PX):
             if self._press_obj_id is None:
                 self._panning = True
+                selection.box = None
+                self._box_select = False
         if self._panning:
             camera.pan_pixels(event.rel[0], event.rel[1], screen_w, screen_h)
 
@@ -168,12 +213,33 @@ class Input:
         selection: Selection,
         screen_w: int,
         screen_h: int,
+        place_kind: str | None,
+        place_faction: str | None = None,
     ) -> None:
+        if not self._lmb_down:
+            return
         mods = pygame.key.get_mods()
         shift = bool(mods & pygame.KMOD_SHIFT)
         dx = event.pos[0] - self._press_xy[0]
         dy = event.pos[1] - self._press_xy[1]
         moved = abs(dx) > DRAG_PX or abs(dy) > DRAG_PX
+
+        if place_kind and not moved and not self._box_select:
+            wx, wy = camera.screen_to_world(*event.pos, screen_w, screen_h)
+            spawned = entities.spawn_debug(
+                place_kind, wx, wy, faction=place_faction or FACTION_PLAYER
+            )
+            if spawned is not None:
+                print(
+                    f"debug: placed {spawned.faction} {spawned.kind} {spawned.id}",
+                    flush=True,
+                )
+            self._lmb_down = False
+            self._panning = False
+            self._box_select = False
+            self._press_obj_id = None
+            selection.box = None
+            return
 
         if self._box_select and moved:
             selection.apply_box(
@@ -183,9 +249,14 @@ class Input:
                 screen_h,
                 *selection.box or (*self._press_xy, *event.pos),
                 additive=shift,
+                debug=camera.debug_mode,
             )
         elif not moved:
-            if self._press_obj_id:
+            if selection.port_cmd:
+                self._finish_port_cmd(
+                    event, camera, entities, selection, screen_w, screen_h
+                )
+            elif self._press_obj_id:
                 if shift:
                     selection.toggle(self._press_obj_id)
                 else:
@@ -208,6 +279,9 @@ class Input:
         screen_w: int,
         screen_h: int,
     ) -> None:
+        if selection.port_cmd:
+            selection.port_cmd = None
+            return
         if not selection.selected:
             return
         wx, wy = camera.screen_to_world(*event.pos, screen_w, screen_h)
@@ -216,7 +290,87 @@ class Input:
             obj = entities.get(oid)
             if not isinstance(obj, DynamicObject) or not obj.active:
                 continue
-            entities.dispatch(SetRoute(object_id=oid, mode="auto", target=target))
+            if obj.faction != FACTION_PLAYER or obj.kind in ("intercept", "tracer"):
+                continue
+            entities.dispatch(
+                SetRoute(object_id=oid, mode="auto", target=target),
+                as_faction=FACTION_PLAYER,
+            )
+
+    def _finish_port_cmd(
+        self,
+        event: pygame.event.Event,
+        camera: Camera,
+        entities: Entities,
+        selection: Selection,
+        screen_w: int,
+        screen_h: int,
+    ) -> None:
+        port_id = selection.port_id
+        if not port_id:
+            selection.port_cmd = None
+            return
+        if selection.port_cmd == "launch":
+            wx, wy = camera.screen_to_world(*event.pos, screen_w, screen_h)
+            entities.launch_ferry(port_id, (wx, wy))
+            selection.port_cmd = None
+            return
+        if selection.port_cmd == "recall":
+            hit = pick_at(
+                entities,
+                camera,
+                screen_w,
+                screen_h,
+                *event.pos,
+                own_only=not camera.debug_mode,
+                source=list(entities.items) if camera.debug_mode else None,
+            )
+            if hit is None or hit.kind != "ferry" or hit.faction != FACTION_PLAYER:
+                return
+            entities.recall_ferry(port_id, hit.id)
+            selection.port_cmd = None
+            return
+        if selection.port_cmd == "load":
+            hit = pick_at(
+                entities,
+                camera,
+                screen_w,
+                screen_h,
+                *event.pos,
+                own_only=not camera.debug_mode,
+                source=list(entities.items) if camera.debug_mode else None,
+            )
+            if hit is None or hit.id == port_id:
+                return
+            if not isinstance(hit, DynamicObject) or hit.mobility != "land":
+                return
+            if hit.faction != FACTION_PLAYER or not hit.active:
+                return
+            entities.load_ferry(port_id, hit.id)
+            selection.port_cmd = None
+            return
+        if selection.port_cmd == "unload":
+            hit = pick_at(
+                entities,
+                camera,
+                screen_w,
+                screen_h,
+                *event.pos,
+                own_only=not camera.debug_mode,
+                source=list(entities.items) if camera.debug_mode else None,
+            )
+            wx, wy = camera.screen_to_world(*event.pos, screen_w, screen_h)
+            dest_port_id = None
+            if (
+                hit is not None
+                and hit.kind == "port"
+                and hit.active
+                and hit.faction == FACTION_PLAYER
+            ):
+                dest_port_id = hit.id
+                wx, wy = hit.x, hit.y
+            entities.unload_ferry(port_id, (wx, wy), dest_port_id=dest_port_id)
+            selection.port_cmd = None
 
     def handle_held(
         self, camera: Camera, dt_wall: float, screen_w: int, screen_h: int

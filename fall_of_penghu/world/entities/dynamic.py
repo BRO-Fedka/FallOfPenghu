@@ -33,12 +33,33 @@ class DynamicObject(GameObject):
             heading=heading,
             active=active,
             orient_icon=True,
+            orient_radar=kind in ("drone", "scout", "intercept"),
         )
         self.speed_mps = speed_mps
         self.mobility = mobility
         self.route: Route | None = None
+        self.ground: str | None = None
+        self.ground_id: int | str | None = None
+        self.doctrine = "fire" if kind in ("aaw", "aa_pickup") else "hold"
+        self.weapon_ready_sim = 0.0
+        self.cargo_id: str | None = None
+        self.strike_id: str | None = None
+        self.armed = False
+        self.magazine = 0
+        self.stowed = False
+        self.docked = False
+        self.home_port_id: str | None = None
+        self.xfer: str | None = None
+        self.xfer_frac: float = 0.0
+        self.task = ""
 
-    def update(self, dt_sim: float) -> None:
+    @property
+    def moving(self) -> bool:
+        if self.kind == "intercept":
+            return bool(self.active)
+        return self.route is not None and self.route.remaining_length() > 1.0
+
+    def update(self, dt_sim: float, speed_mps: float | None = None) -> None:
         if not self.active or self.route is None:
             return
         if self.route.remaining_length() <= 1.0:
@@ -51,7 +72,8 @@ class DynamicObject(GameObject):
             return
         if dt_sim <= 0.0:
             return
-        self.route.s += self.speed_mps * dt_sim
+        speed = self.speed_mps if speed_mps is None else speed_mps
+        self.route.s += max(speed, 0.0) * dt_sim
         if self.route.s >= self.route.length:
             end = self.route.points[-1]
             prev = self.route.points[-2]

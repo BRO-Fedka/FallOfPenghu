@@ -22,9 +22,13 @@ class Selection:
         self.selected: set[str] = set()
         self.hover_id: str | None = None
         self.box: tuple[int, int, int, int] | None = None
+        self.port_cmd: str | None = None
+        self.port_id: str | None = None
 
     def clear(self) -> None:
         self.selected.clear()
+        self.port_cmd = None
+        self.port_id = None
 
     def toggle(self, object_id: str) -> None:
         if object_id in self.selected:
@@ -34,6 +38,8 @@ class Selection:
 
     def replace(self, object_id: str) -> None:
         self.selected = {object_id}
+        self.port_cmd = None
+        self.port_id = None
 
     def apply_box(
         self,
@@ -47,6 +53,7 @@ class Selection:
         y1: int,
         *,
         additive: bool,
+        debug: bool = False,
     ) -> None:
         left = min(x0, x1)
         right = max(x0, x1)
@@ -55,7 +62,12 @@ class Selection:
         if right - left < 2 and bottom - top < 2:
             return
         hits: set[str] = set()
-        for obj in entities.snapshot(FACTION_PLAYER):
+        pool = list(entities.items) if debug else entities.snapshot(FACTION_PLAYER)
+        for obj in pool:
+            if not debug and (
+                obj.faction != FACTION_PLAYER or obj.kind in ("intercept", "tracer")
+            ):
+                continue
             sx, sy = camera.world_to_screen(obj.x, obj.y, screen_w, screen_h)
             if left <= sx <= right and top <= sy <= bottom:
                 hits.add(obj.id)
@@ -63,6 +75,8 @@ class Selection:
             self.selected |= hits
         else:
             self.selected = hits
+        self.port_cmd = None
+        self.port_id = None
 
     def update_hover(
         self,
@@ -84,6 +98,10 @@ def pick_at(
     screen_h: int,
     sx: float,
     sy: float,
+    *,
+    own_only: bool = False,
+    source: list[GameObject] | None = None,
+    include_intercept: bool = False,
 ) -> GameObject | None:
     mpp = camera.meters_per_pixel(screen_w)
     radius_m = max(PICK_PX * mpp, 8.0)
@@ -91,7 +109,12 @@ def pick_at(
     wx, wy = camera.screen_to_world(sx, sy, screen_w, screen_h)
     best: GameObject | None = None
     best_d = radius2
-    for obj in entities.snapshot(FACTION_PLAYER):
+    pool = source if source is not None else entities.snapshot(FACTION_PLAYER)
+    for obj in pool:
+        if obj.kind in ("intercept", "tracer") and not include_intercept:
+            continue
+        if own_only and obj.faction != FACTION_PLAYER:
+            continue
         d = _dist2((obj.x, obj.y), (wx, wy))
         if d <= best_d:
             best_d = d

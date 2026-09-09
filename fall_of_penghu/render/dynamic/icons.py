@@ -16,6 +16,7 @@ from fall_of_penghu.world.entities.game_object import (
     FACTION_PLAYER,
     FACTION_TAIWAN,
 )
+from fall_of_penghu.world.entities.kinds import SKIP_PLACE, mark_static
 
 ROOT = Path(__file__).resolve().parents[3]
 ICON_DIR = ROOT / "assets" / "icons"
@@ -29,6 +30,19 @@ KIND_FOLDERS: dict[str, str] = {
     "airport": "static/airport",
     "bridge": "static/bridge",
     "aaw": "units/aaw",
+    "aa_pickup": "units/aa_pickup",
+    "ship": "units/ship",
+    "drone": "units/drone",
+    "scout": "units/scout",
+    "truck": "units/truck",
+    "ferry": "units/ferry",
+    "intercept": "units/intercept",
+    "drone_carrier": "units/drone_carrier",
+    "landing_ship": "units/landing_ship",
+    "infantry": "units/infantry",
+    "artillery": "units/artillery",
+    "tank": "units/tank",
+    "embark": "ui/embark",
 }
 
 _PINK_FLOOR = 32
@@ -80,6 +94,34 @@ def _folder_for(kind: str, root: Path) -> Path | None:
     return None
 
 
+def listed_kinds(*extra: str, root: Path | None = None) -> list[str]:
+    """Game kinds the debug palette can place. New icon folders appear here."""
+    base = root if root is not None else ICON_DIR
+    seen: set[str] = set()
+    out: list[str] = []
+
+    def add(kind: str) -> None:
+        if not kind or kind in seen or kind in SKIP_PLACE:
+            return
+        seen.add(kind)
+        out.append(kind)
+
+    for kind in ("port", "airfield", "bridge"):
+        add(kind)
+    for group in ("static", "units"):
+        folder = base / group
+        if not folder.is_dir():
+            continue
+        for child in sorted(folder.iterdir(), key=lambda p: p.name):
+            if child.is_dir():
+                add(child.name)
+                if group == "static":
+                    mark_static(child.name)
+    for kind in extra:
+        add(kind)
+    return out
+
+
 class IconStore:
     """Kind + faction + radar → 24px chip. Missing files stay None."""
 
@@ -98,6 +140,13 @@ class IconStore:
             baked = _center_on_chip(baked)
         self._cache[key] = baked
         return baked
+
+    def overlay(self, kind: str, radar: bool) -> pygame.Surface | None:
+        """UI chip without faction tint. Missing files stay None."""
+        src = self._load_source(kind, radar)
+        if src is None:
+            return None
+        return _center_on_chip(src)
 
     def _load_source(self, kind: str, radar: bool) -> pygame.Surface | None:
         key = (kind, radar)

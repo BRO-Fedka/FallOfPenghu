@@ -142,6 +142,24 @@ def _segment(tod: float) -> tuple[float, str, dict, str, dict, float]:
     return 0.0, n0, p0, n0, p0, 0.0
 
 
+CONTRAST_DAY = (0, 0, 0)
+CONTRAST_NIGHT = (255, 255, 255)
+
+
+def _contrast_ink(phase: str) -> tuple[int, int, int]:
+    return CONTRAST_NIGHT if phase == "night" else CONTRAST_DAY
+
+
+def contrast_rgb(tod: float) -> tuple[int, int, int]:
+    """Map ink: black by day, white by night. Lerps through dawn/dusk."""
+    _, n0, _, n1, _, u = _segment(tod)
+    a = _contrast_ink(n0)
+    b = _contrast_ink(n1)
+    if a == b:
+        return a
+    return _lerp_rgb(a, b, u)
+
+
 def palette_at(tod: float) -> dict[str, tuple[int, int, int]]:
     _, _, a, _, b, u = _segment(tod)
     return {key: _lerp_rgb(a[key], b[key], u) for key in PALETTE_KEYS}

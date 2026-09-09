@@ -18,6 +18,7 @@ BRIDGE_KEEP_M = 250.0
 # Centroids (or click) of water spans that fail the two-island test but are real sites.
 BRIDGE_KEEP_XY = (
     (1979.0, 19021.0),
+    (-630.0, 19126.0),
 )
 REMOVED_PORT_MATCH_M = 40.0
 SHIP_OFFSHORE_M = 350.0
@@ -340,6 +341,59 @@ def _port_removed(x: float, y: float, removed: list[dict]) -> bool:
         if dx * dx + dy * dy <= thresh2:
             return True
     return False
+
+
+def persist_spawn(sites_path: Path, rec: dict, *, static: bool) -> None:
+    path = Path(sites_path)
+    data = _load_existing(path)
+    if data.get("format") != "fall-of-penghu-sites":
+        raise ValueError("unexpected sites format")
+    key = "sites" if static else "units"
+    rows = list(data.get(key) or [])
+    rows.append(rec)
+    data[key] = rows
+    rid = str(rec.get("id") or "")
+    if rid:
+        data["removed_ids"] = [
+            item for item in (data.get("removed_ids") or []) if str(item) != rid
+        ]
+    with path.open("w", encoding="utf-8") as fh:
+        json.dump(data, fh, indent=2)
+        fh.write("\n")
+
+
+def persist_forget(
+    sites_path: Path,
+    object_ids: list[str],
+    port_points: list[tuple[float, float]],
+) -> None:
+    path = Path(sites_path)
+    data = _load_existing(path)
+    if data.get("format") != "fall-of-penghu-sites":
+        raise ValueError("unexpected sites format")
+    drop = set(object_ids)
+    data["sites"] = [
+        site for site in (data.get("sites") or []) if str(site.get("id")) not in drop
+    ]
+    data["units"] = [
+        unit for unit in (data.get("units") or []) if str(unit.get("id")) not in drop
+    ]
+    forgotten = [str(item) for item in (data.get("removed_ids") or [])]
+    have = set(forgotten)
+    for oid in object_ids:
+        if oid not in have:
+            forgotten.append(oid)
+            have.add(oid)
+    data["removed_ids"] = forgotten
+    if port_points:
+        removed = list(data.get("removed_ports") or [])
+        for x, y in port_points:
+            if not _port_removed(x, y, removed):
+                removed.append({"x": x, "y": y})
+        data["removed_ports"] = removed
+    with path.open("w", encoding="utf-8") as fh:
+        json.dump(data, fh, indent=2)
+        fh.write("\n")
 
 
 def persist_removed_ports(sites_path: Path, points: list[tuple[float, float]]) -> None:
