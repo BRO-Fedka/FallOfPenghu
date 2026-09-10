@@ -9,7 +9,15 @@ from fall_of_penghu.world.entities.collect_sites import (
     persist_spawn,
 )
 from fall_of_penghu.world.entities.kinds import is_static_kind, kind_label
-from fall_of_penghu.world.entities.command import Command, Halt, SetDoctrine, SetRoute
+from fall_of_penghu.world.entities.command import (
+    Command,
+    Halt,
+    SetAim,
+    SetDoctrine,
+    SetEngageFilter,
+    SetFocus,
+    SetRoute,
+)
 from fall_of_penghu.world.entities.dynamic import DynamicObject
 from fall_of_penghu.world.entities.game_object import (
     FACTION_CHINA,
@@ -263,7 +271,7 @@ class ObjectManager:
         obj = self._by_id.get(cmd.object_id)
         if not isinstance(obj, DynamicObject) or obj.faction != as_faction:
             return
-        if obj.kind in ("intercept", "tracer"):
+        if obj.kind in ("intercept", "tracer", "shell"):
             return
         if isinstance(cmd, Halt):
             obj.route = None
@@ -276,9 +284,36 @@ class ObjectManager:
             allowed = {
                 "aaw": ("fire", "hold", "air_only", "missiles_only"),
                 "aa_pickup": ("fire", "hold", "air_only"),
+                "infantry": ("fire", "hold"),
+                "tank": ("fire", "hold"),
+                "artillery": ("fire", "hold"),
             }
             if cmd.doctrine in allowed.get(obj.kind, ()):
                 obj.doctrine = cmd.doctrine
+            return
+        if isinstance(cmd, SetEngageFilter):
+            catalog = self._catalog
+            if catalog is None or catalog.engage_mobility(obj.kind) is None:
+                return
+            allowed = catalog.engage_kinds_for(obj.kind)
+            if not allowed:
+                return
+            if cmd.kinds is None:
+                obj.engage_kinds = None
+                return
+            picked = frozenset(k for k in cmd.kinds if k in allowed)
+            obj.engage_kinds = None if picked == allowed else picked
+            return
+        if isinstance(cmd, SetAim):
+            if obj.kind != "artillery":
+                return
+            obj.aim_xy = cmd.target
+            return
+        if isinstance(cmd, SetFocus):
+            if cmd.ids is None:
+                obj.focus_ids = frozenset()
+            else:
+                obj.focus_ids = frozenset(cmd.ids)
             return
         if isinstance(cmd, SetRoute):
             if not obj.active or self.planner is None:
@@ -312,7 +347,11 @@ class ObjectManager:
                 continue
             if obj.stowed:
                 continue
-            if self.planner is not None and obj.kind not in ("intercept", "tracer"):
+            if self.planner is not None and obj.kind not in (
+                "intercept",
+                "tracer",
+                "shell",
+            ):
                 spot = self.planner.land.locate(obj.x, obj.y)
                 if spot is None:
                     obj.ground = None

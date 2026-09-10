@@ -40,11 +40,19 @@ class DynamicObject(GameObject):
         self.route: Route | None = None
         self.ground: str | None = None
         self.ground_id: int | str | None = None
-        self.doctrine = "fire" if kind in ("aaw", "aa_pickup") else "hold"
+        self.doctrine = (
+            "fire"
+            if kind in ("aaw", "aa_pickup", "infantry", "tank", "artillery")
+            else "hold"
+        )
         self.weapon_ready_sim = 0.0
         self.cargo_id: str | None = None
         self.strike_id: str | None = None
         self.armed = False
+        self.engage_kinds: frozenset[str] | None = None
+        self.engage_kinds_saved: frozenset[str] | None = None
+        self.aim_xy: tuple[float, float] | None = None
+        self.focus_ids: frozenset[str] = frozenset()
         self.magazine = 0
         self.stowed = False
         self.docked = False

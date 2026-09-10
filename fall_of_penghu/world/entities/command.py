@@ -22,4 +22,22 @@ class SetDoctrine:
     doctrine: str
 
 
-Command = SetRoute | Halt | SetDoctrine
+@dataclass(frozen=True)
+class SetEngageFilter:
+    object_id: str
+    kinds: tuple[str, ...] | None
+
+
+@dataclass(frozen=True)
+class SetAim:
+    object_id: str
+    target: tuple[float, float] | None
+
+
+@dataclass(frozen=True)
+class SetFocus:
+    object_id: str
+    ids: tuple[str, ...] | None
+
+
+Command = SetRoute | Halt | SetDoctrine | SetEngageFilter | SetAim | SetFocus

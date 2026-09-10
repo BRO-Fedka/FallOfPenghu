@@ -1,4 +1,12 @@
-from fall_of_penghu.world.entities.command import Command, Halt, SetDoctrine, SetRoute
+from fall_of_penghu.world.entities.command import (
+    Command,
+    Halt,
+    SetAim,
+    SetDoctrine,
+    SetEngageFilter,
+    SetFocus,
+    SetRoute,
+)
 from fall_of_penghu.world.entities.intercept import Intercept
 from fall_of_penghu.world.entities.tracer import Tracer
 from fall_of_penghu.world.entities.dynamic import DynamicObject
@@ -25,10 +33,13 @@ __all__ = [
     "GameObject",
     "Halt",
     "Intercept",
+    "SetAim",
     "ObjectManager",
     "Planner",
     "Route",
     "SetDoctrine",
+    "SetEngageFilter",
+    "SetFocus",
     "SetRoute",
     "StaticObject",
     "Tracer",

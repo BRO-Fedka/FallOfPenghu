@@ -5,12 +5,16 @@ import pygame
 from fall_of_penghu.camera import KEYBOARD_TICK_S, Camera
 from fall_of_penghu.selection import DRAG_PX, Selection, pick_at
 from fall_of_penghu.world.clock import DEBUG_SPEED, SPEEDS, Clock
+from fall_of_penghu.world.combat.doctrine import is_battery
 from fall_of_penghu.world.entities import (
     DynamicObject,
     Entities,
     FACTION_PLAYER,
+    SetAim,
+    SetFocus,
     SetRoute,
 )
+from fall_of_penghu.world.entities.kinds import SHOT_KINDS, is_static_kind
 
 PAN_SPEED_PX = 5.0
 ZOOM_DELTA_DIVISOR = 600.0
@@ -160,6 +164,25 @@ class Input:
         self._panning = False
         self._box_select = False
         self._press_obj_id = None
+        if selection.artillery_aim:
+            wx, wy = camera.screen_to_world(*event.pos, screen_w, screen_h)
+            for oid in list(selection.selected):
+                obj = entities.get(oid)
+                if obj is None or obj.kind != "artillery":
+                    continue
+                if obj.faction != FACTION_PLAYER:
+                    continue
+                entities.dispatch(
+                    SetAim(object_id=oid, target=(wx, wy)),
+                    as_faction=FACTION_PLAYER,
+                )
+            selection.artillery_aim = False
+            self._lmb_down = False
+            return
+        if selection.pick_targets:
+            self._box_select = True
+            selection.box = (*event.pos, *event.pos)
+            return
         if place_kind:
             return
         if selection.port_cmd:
@@ -241,6 +264,39 @@ class Input:
             selection.box = None
             return
 
+        if selection.pick_targets:
+            if self._box_select and moved:
+                box = selection.box or (*self._press_xy, *event.pos)
+                ids = selection.foes_in_box(
+                    entities, camera, screen_w, screen_h, *box
+                )
+                _merge_focus(entities, selection, ids)
+            elif not moved:
+                hit = pick_at(
+                    entities,
+                    camera,
+                    screen_w,
+                    screen_h,
+                    *event.pos,
+                    own_only=False,
+                    source=list(entities.snapshot(FACTION_PLAYER)),
+                )
+                if (
+                    hit is not None
+                    and hit.faction != FACTION_PLAYER
+                    and hit.kind not in SHOT_KINDS
+                    and not is_static_kind(hit.kind)
+                    and hit.active
+                    and not getattr(hit, "stowed", False)
+                ):
+                    _toggle_focus(entities, selection, hit.id)
+            self._lmb_down = False
+            self._panning = False
+            self._box_select = False
+            self._press_obj_id = None
+            selection.box = None
+            return
+
         if self._box_select and moved:
             selection.apply_box(
                 entities,
@@ -282,6 +338,12 @@ class Input:
         if selection.port_cmd:
             selection.port_cmd = None
             return
+        if selection.artillery_aim:
+            selection.artillery_aim = False
+            return
+        if selection.pick_targets:
+            selection.pick_targets = False
+            return
         if not selection.selected:
             return
         wx, wy = camera.screen_to_world(*event.pos, screen_w, screen_h)
@@ -290,7 +352,7 @@ class Input:
             obj = entities.get(oid)
             if not isinstance(obj, DynamicObject) or not obj.active:
                 continue
-            if obj.faction != FACTION_PLAYER or obj.kind in ("intercept", "tracer"):
+            if obj.faction != FACTION_PLAYER or obj.kind in ("intercept", "tracer", "shell"):
                 continue
             entities.dispatch(
                 SetRoute(object_id=oid, mode="auto", target=target),
@@ -399,4 +461,38 @@ class Input:
         factor = _zoom_factor(signed) ** ticks
         camera.zoom_at_screen(
             factor, screen_w * 0.5, screen_h * 0.5, screen_w, screen_h
+        )
+
+
+def _focus_guns(entities: Entities, selection: Selection) -> list:
+    out = []
+    for oid in selection.selected:
+        obj = entities.get(oid)
+        if is_battery(obj) and obj is not None and obj.faction == FACTION_PLAYER:
+            out.append(obj)
+    return out
+
+
+def _merge_focus(entities: Entities, selection: Selection, ids: set[str]) -> None:
+    if not ids:
+        return
+    for obj in _focus_guns(entities, selection):
+        current = set(getattr(obj, "focus_ids", ()) or ())
+        current |= ids
+        entities.dispatch(
+            SetFocus(object_id=obj.id, ids=tuple(sorted(current))),
+            as_faction=FACTION_PLAYER,
+        )
+
+
+def _toggle_focus(entities: Entities, selection: Selection, target_id: str) -> None:
+    for obj in _focus_guns(entities, selection):
+        current = set(getattr(obj, "focus_ids", ()) or ())
+        if target_id in current:
+            current.discard(target_id)
+        else:
+            current.add(target_id)
+        entities.dispatch(
+            SetFocus(object_id=obj.id, ids=tuple(sorted(current))),
+            as_faction=FACTION_PLAYER,
         )

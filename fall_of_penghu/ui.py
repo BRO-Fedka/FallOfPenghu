@@ -8,7 +8,7 @@ from fall_of_penghu.render.dynamic.icons import CHIP, IconStore
 from fall_of_penghu.render.static.tod import palette_at, phase_label
 from fall_of_penghu.selection import Selection
 from fall_of_penghu.world.clock import DEBUG_SPEED, SPEEDS, Clock
-from fall_of_penghu.world.combat.doctrine import LABELS, doctrines_for, is_battery
+from fall_of_penghu.world.combat.doctrine import FIRE, HOLD, LABELS, doctrines_for, is_battery
 from fall_of_penghu.world.entities import (
     Entities,
     FACTION_PLAYER,
@@ -16,6 +16,8 @@ from fall_of_penghu.world.entities import (
     SetDoctrine,
 )
 from fall_of_penghu.debug_palette import DebugPalette
+from fall_of_penghu.engage_palette import EngagePalette
+from fall_of_penghu.vision_palette import VisionPalette
 from fall_of_penghu.world.entities.transport import PORT_CAP
 from fall_of_penghu.world.perception import Perception, format_calendar_span
 
@@ -64,6 +66,8 @@ class Hud:
         debug: bool,
         chat: ChatLog | None = None,
         palette: DebugPalette | None = None,
+        engage: EngagePalette | None = None,
+        vision: VisionPalette | None = None,
         selection: Selection | None = None,
         entities: Entities | None = None,
         camera: Camera | None = None,
@@ -74,6 +78,10 @@ class Hud:
         if chat is not None and chat.hits(x, y, screen_w, screen_h, inset):
             return True
         if debug and palette is not None and palette.hits(x, y):
+            return True
+        if engage is not None and engage.hits(x, y, selection, entities):
+            return True
+        if vision is not None and vision.hits(x, y):
             return True
         self._layout_port_menu(selection, entities, camera, screen_w, screen_h)
         for rect, _cmd in self._port_buttons:
@@ -121,6 +129,8 @@ class Hud:
         y = (PANEL_H - BTN_H) // 2
         kinds = {obj.kind for obj in batteries}
         for doctrine in doctrines_for(kinds):
+            if doctrine in (FIRE, HOLD):
+                continue
             self._doctrine_buttons.append((pygame.Rect(x, y, DOC_BTN_W, BTN_H), doctrine))
             x += DOC_BTN_W + BTN_GAP
 
@@ -293,6 +303,8 @@ class Hud:
         perception: Perception | None = None,
         chat: ChatLog | None = None,
         palette: DebugPalette | None = None,
+        engage: EngagePalette | None = None,
+        vision: VisionPalette | None = None,
     ) -> None:
         debug = camera.debug_mode
         self._layout(debug)
@@ -394,7 +406,13 @@ class Hud:
         if hover is not None:
             tip = hover.name
             doctrine = getattr(hover, "doctrine", None)
-            if hover.kind in ("aaw", "aa_pickup") and doctrine:
+            if hover.kind in (
+                "aaw",
+                "aa_pickup",
+                "infantry",
+                "tank",
+                "artillery",
+            ) and doctrine:
                 tip = f"{tip}  {LABELS.get(doctrine, doctrine)}"
             hp = getattr(hover, "hp", None)
             max_hp = getattr(hover, "max_hp", None)
@@ -462,6 +480,22 @@ class Hud:
             renderer.overlay(footer, (0, screen_h - DEBUG_H))
 
         self._blit_port_menu(renderer, selection, entities, ink, screen_w, screen_h)
+        if selection is not None and selection.artillery_aim:
+            hint = self.small.render("Click map to aim  CLR to cancel", True, ink)
+            box = pygame.Surface(
+                (hint.get_width() + 12, hint.get_height() + 8), pygame.SRCALPHA
+            )
+            box.fill((8, 10, 12, 200))
+            box.blit(hint, (6, 4))
+            renderer.overlay(box, (12, PANEL_H + 8))
+        elif selection is not None and selection.pick_targets:
+            hint = self.small.render("Click or box enemy units  RMB done", True, ink)
+            box = pygame.Surface(
+                (hint.get_width() + 12, hint.get_height() + 8), pygame.SRCALPHA
+            )
+            box.fill((8, 10, 12, 200))
+            box.blit(hint, (6, 4))
+            renderer.overlay(box, (12, PANEL_H + 8))
 
         if chat is not None:
             inset = DEBUG_H if debug else 0
@@ -469,6 +503,19 @@ class Hud:
 
         if debug and palette is not None:
             palette.blit(renderer, mouse_screen, ink, screen_w, screen_h)
+        if engage is not None:
+            engage.blit(
+                renderer,
+                mouse_screen,
+                ink,
+                selection,
+                entities,
+                None if perception is None else perception.catalog,
+                screen_w,
+                screen_h,
+            )
+        if vision is not None:
+            vision.blit(renderer, mouse_screen, ink, screen_w, screen_h)
 
     def _blit_port_menu(
         self,

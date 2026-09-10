@@ -1,0 +1,366 @@
+{
+  "format": "fall-of-penghu-detection",
+  "cluster": {
+    "radius_m": 1000.0,
+    "window_sim_s": 20.0
+  },
+  "imprint": {
+    "default_fade_sim_s": 300.0,
+    "fade_sim_s": {
+      "drone": 100.0,
+      "scout": 150.0,
+      "ship": 90.0,
+      "aaw": 50.0,
+      "aa_pickup": 45.0,
+      "truck": 45.0,
+      "landing_ship": 90.0,
+      "infantry": 40.0,
+      "artillery": 50.0,
+      "tank": 55.0,
+      "intercept": 1.0,
+      "tracer": 1.0,
+      "shell": 1.0
+    }
+  },
+  "alerts": {
+    "default": { "notify": false, "cluster": false, "slow_time": false },
+    "drone": { "notify": true, "cluster": true, "slow_time": true },
+    "scout": { "notify": true, "cluster": true, "slow_time": true },
+    "ship": { "notify": true, "cluster": false, "slow_time": true },
+    "drone_carrier": { "notify": true, "cluster": false, "slow_time": true },
+    "ferry": { "notify": true, "cluster": false, "slow_time": false },
+    "landing_ship": { "notify": true, "cluster": false, "slow_time": true },
+    "infantry": { "notify": true, "cluster": true, "slow_time": false },
+    "artillery": { "notify": true, "cluster": false, "slow_time": false },
+    "tank": { "notify": true, "cluster": false, "slow_time": false },
+    "intercept": { "notify": false, "cluster": false, "slow_time": false },
+    "tracer": { "notify": false, "cluster": false, "slow_time": false },
+    "shell": { "notify": false, "cluster": false, "slow_time": false },
+    "aa_pickup": { "notify": true, "cluster": false, "slow_time": false }
+  },
+  "detectable_by": {
+    "drone": ["radar", "visual_primitive", "visual_advanced"],
+    "scout": ["radar", "visual_primitive", "visual_advanced"],
+    "ship": [ "visual_primitive", "visual_advanced", "satellite", "lookout"],
+    "drone_carrier": [ "visual_primitive", "visual_advanced", "satellite", "lookout"],
+    "ferry": [ "visual_primitive", "visual_advanced", "satellite", "lookout"],
+    "landing_ship": [ "visual_primitive", "visual_advanced", "satellite", "lookout"],
+    "infantry": ["visual_primitive", "visual_advanced"],
+    "artillery": ["visual_primitive", "visual_advanced", "satellite"],
+    "tank": ["visual_primitive", "visual_advanced", "satellite"],
+    "aaw": ["visual_primitive", "visual_advanced", "satellite"],
+    "aa_pickup": ["visual_primitive", "visual_advanced", "satellite"],
+    "truck": ["visual_primitive", "visual_advanced", "satellite"],
+    "intercept": ["radar","visual_primitive", "visual_advanced"],
+    "tracer": ["visual_primitive", "visual_advanced"],
+    "shell": ["visual_primitive", "visual_advanced"]
+  },
+  "cover_role": {
+    "drone": "air",
+    "scout": "air",
+    "ship": "sea",
+    "drone_carrier": "sea",
+    "ferry": "sea",
+    "landing_ship": "sea",
+    "infantry": "ground",
+    "artillery": "ground",
+    "tank": "ground",
+    "intercept": "air",
+    "aaw": "ground",
+    "aa_pickup": "ground",
+    "truck": "ground",
+    "tracer": "air",
+    "shell": "air",
+    "port": "ground",
+    "airfield": "ground",
+    "bridge": "ground"
+  },
+  "emitters": {
+    "aaw": ["radar"],
+    "drone": ["visual_primitive"],
+    "scout": ["visual_advanced"],
+    "ship": ["visual_advanced","radar"],
+    "drone_carrier": ["visual_advanced"],
+    "ferry": ["visual_primitive"],
+    "landing_ship": ["visual_advanced"],
+    "infantry": ["visual_primitive"],
+    "artillery": ["visual_primitive"],
+    "tank": ["visual_primitive"],
+    "aa_pickup": ["visual_primitive","radar"],
+    "truck": ["visual_primitive"]
+  },
+  "emitter_exceptions": {
+    "radar": {
+      "ship": 10000.0,
+      "aaw": 8000.0,
+      "aa_pickup": 3000.0
+    }
+  },
+  "health": {
+    "default": 100.0,
+    "kinds": {
+      "drone": 100.0,
+      "scout": 25.0,
+      "aaw": 300.0,
+      "aa_pickup": 100.0,
+      "truck": 100.0,
+      "ship": 500.0,
+      "drone_carrier": 400.0,
+      "ferry": 100.0,
+      "landing_ship": 400.0,
+      "infantry": 200.0,
+      "artillery": 100.0,
+      "tank": 450.0,
+      "bridge": 1000.0,
+      "port": 2000.0,
+      "airfield": 2000.0,
+      "intercept": 1.0,
+      "tracer": 1.0,
+      "shell": 1.0
+    }
+  },
+  "weapons": {
+    "aaw": {
+      "engagement_m": 6000.0,
+      "doctrine": "fire",
+      "ammo": "intercept",
+      "damage": 100.0,
+      "cooldown_sim_s": 5.0,
+      "max_in_flight": 1,
+      "engage_mobility": ["air"]
+    },
+    "aa_pickup": {
+      "engagement_m": 2000.0,
+      "doctrine": "fire",
+      "ammo": "tracer",
+      "damage": 25.0,
+      "hit_p0": 0.55,
+      "cooldown_sim_s": 0.35,
+      "max_in_flight": 6,
+      "engage_mobility": ["air", "land"]
+    },
+    "infantry": {
+      "engagement_m": 750.0,
+      "doctrine": "fire",
+      "ammo": "small_arms",
+      "damage": 150.0,
+      "hit_p0": 0.75,
+      "cooldown_sim_s": 3.0,
+      "max_in_flight": 1,
+      "engage_mobility": ["land"],
+      "speed_mps": 420.0,
+      "life_sim_s": 10.0
+    },
+    "tank": {
+      "engagement_m": 3000.0,
+      "doctrine": "fire",
+      "ammo": "cannon",
+      "damage": 90.0,
+      "hit_p0": 0.7,
+      "cooldown_sim_s": 2.5,
+      "max_in_flight": 1,
+      "engage_mobility": ["land"],
+      "speed_mps": 380.0,
+      "life_sim_s": 12.0
+    },
+    "artillery": {
+      "engagement_m": 12000.0,
+      "doctrine": "fire",
+      "ammo": "shell",
+      "damage": 50.0,
+      "blast_m": 15.0,
+      "cooldown_sim_s": 12.0,
+      "max_in_flight": 1,
+      "engage_mobility": ["land", "sea"],
+      "min_engagement_m": 2000.0,
+      "must_halt": true,
+      "speed_mps": 350.0,
+      "life_sim_s": 40.0,
+      "scatter_min_m": 20.0,
+      "scatter_max_m": 250.0
+    },
+    "intercept": {
+      "speed_mps": 220.0,
+      "kill_m": 28.0,
+      "life_sim_s": 45.0,
+      "damage": 100.0
+    },
+    "tracer": {
+      "speed_mps": 420.0,
+      "life_sim_s": 10.0
+    },
+    "small_arms": {
+      "speed_mps": 420.0,
+      "life_sim_s": 10.0
+    },
+    "cannon": {
+      "speed_mps": 380.0,
+      "life_sim_s": 12.0
+    },
+    "shell": {
+      "speed_mps": 350.0,
+      "life_sim_s": 40.0
+    },
+    "drone": {
+      "damage": 100.0,
+      "blast_m": 20.0,
+      "engage_mobility": ["land", "sea"]
+    }
+  },
+  "channels": {
+    "radar": {
+      "default_range_m": 10000.0,
+      "day_only": false,
+      "night_factor": 0.0,
+      "exceptions": {},
+      "emitter_exceptions": {
+        "ship": 10000.0,
+        "aaw": 8000.0,
+        "aa_pickup": 3000.0
+      }
+    },
+    "visual_primitive": {
+      "default_range_m": 500.0,
+      "day_only": false,
+      "night_factor": 0.75,
+      "exceptions": {
+        "ship": 20000.0,
+        "drone_carrier": 20000.0,
+        "ferry": 20000.0,
+        "landing_ship": 20000.0,
+        "infantry": 500,
+        "artillery": 1500.0,
+        "tank": 2500.0,
+        "drone": 500.0,
+        "scout": 500,
+        "aaw": 2000,
+        "aa_pickup": 1500.0,
+        "truck": 1500.0
+      }
+    },
+    "visual_advanced": {
+      "default_range_m": 6000.0,
+      "day_only": false,
+      "night_factor": 0.0,
+      "exceptions": {
+        "ship": 20000.0,
+        "drone_carrier": 20000.0,
+        "ferry": 20000.0,
+        "landing_ship": 20000.0
+      }
+    },
+    "satellite": {
+      "default_range_m": null,
+      "day_only": false,
+      "night_factor": 1.0,
+      "global": true,
+      "exceptions": {}
+    },
+    "lookout": {
+      "default_range_m": 20000.0,
+      "day_only": false,
+      "night_factor": 1.0,
+      "exceptions": {
+        "ship": 20000.0,
+        "drone_carrier": 20000.0,
+        "ferry": 20000.0,
+        "landing_ship": 20000.0
+      },
+      "night_factor_exceptions": {
+        "ship": 0.8,
+        "drone_carrier": 0.8,
+        "ferry": 0.8,
+        "landing_ship": 0.8
+      }
+    }
+  },
+  "cover": {
+    "radar": { "open": 1.0, "grass": 0.9, "forest": 0.0 },
+    "visual_primitive": { "open": 1.0, "grass": 0.6, "forest": 0.25 },
+    "visual_advanced": { "open": 1.0, "grass": 0.8, "forest": 0.035 },
+    "satellite": { "open": 1.0, "grass": 1.0, "forest": 0.0 },
+    "lookout": { "open": 1.0, "grass": 0.5, "forest": 0.1 }
+  },
+  "movement": {
+    "defaults": {
+      "speed_mps": 0,
+      "offroad": {
+        "forest": 0.1,
+        "grass": 0.7,
+        "open": 0.9
+      }
+    },
+    "kinds": {
+      "drone": { "speed_mps": 30.0 },
+      "scout": { "speed_mps": 18.0 },
+      "ship": { "speed_mps": 10 },
+      "drone_carrier": { "speed_mps": 8 },
+      "ferry": { "speed_mps": 7.0 },
+      "landing_ship": { "speed_mps": 6.0 },
+      "infantry": { "speed_mps": 4.0 },
+      "artillery": { "speed_mps": 1.0 },
+      "tank": { "speed_mps": 10.0 },
+      "aaw": { "speed_mps": 16.0 },
+      "aa_pickup": { "speed_mps": 25.0 },
+      "truck": { "speed_mps": 25.0 },
+      "intercept": { "speed_mps": 220.0 },
+      "tracer": { "speed_mps": 420.0 },
+      "small_arms": { "speed_mps": 420.0 },
+      "cannon": { "speed_mps": 380.0 },
+      "shell": { "speed_mps": 350.0 }
+    }
+  },
+  "threat": {
+    "static": 0.05,
+    "default": {
+      "tank": 10.0,
+      "artillery": 9.0,
+      "aa_pickup": 7.0,
+      "aaw": 6.0,
+      "infantry": 5.0,
+      "landing_ship": 8.0,
+      "ship": 7.0,
+      "drone_carrier": 7.0,
+      "drone": 4.0,
+      "ferry": 3.0,
+      "truck": 2.0,
+      "scout": 2.0,
+      "default": 1.0
+    },
+    "tank": {
+      "tank": 12.0,
+      "artillery": 11.0,
+      "aa_pickup": 7.0,
+      "infantry": 4.0,
+      "aaw": 3.0,
+      "truck": 2.0
+    },
+    "infantry": {
+      "infantry": 8.0,
+      "tank": 10.0,
+      "aa_pickup": 6.0,
+      "artillery": 5.0,
+      "truck": 3.0
+    },
+    "artillery": {
+      "landing_ship": 11.0,
+      "ship": 10.0,
+      "artillery": 9.0,
+      "tank": 8.0,
+      "aa_pickup": 6.0,
+      "aaw": 6.0,
+      "infantry": 3.0,
+      "truck": 2.0
+    }
+  },
+  "lookout": {
+    "simplify_m": 20.0
+  },
+  "satellite_windows": {
+    "faction": "C",
+    "always_day": true,
+    "period_calendar_s": 21600.0,
+    "duration_calendar_s": 3000.0,
+    "offset_calendar_s": 0.0
+  }
+}

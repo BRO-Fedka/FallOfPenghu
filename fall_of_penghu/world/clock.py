@@ -16,6 +16,16 @@ DEBUG_SPEED = 32.0
 DAY_START = 5.0 / 24.0
 DAY_END = 18.25 / 24.0
 
+# Same TOD windows as render.static.tod.KEYFRAMES: 1 = full night, 0 = day.
+_DARKNESS_KEYS: tuple[tuple[float, float], ...] = (
+    (0.00, 1.0),
+    (4 / 24, 1.0),
+    (5 / 24, 0.0),
+    (17.75 / 24, 0.0),
+    (19 / 24, 1.0),
+    (1.0, 1.0),
+)
+
 
 class Clock:
     """Match clocks. Units never scale time themselves; they read dt_sim."""
@@ -49,11 +59,6 @@ class Clock:
         return (self.calendar_time / CALENDAR_DAY_S) % 1.0
 
     @property
-    def is_daylight(self) -> bool:
-        t = self.time_of_day
-        return DAY_START <= t < DAY_END
-
-    @property
     def calendar_day(self) -> int:
         return int(self.calendar_time // CALENDAR_DAY_S)
 
@@ -61,6 +66,11 @@ class Clock:
     def is_daylight(self) -> bool:
         t = self.time_of_day
         return DAYLIGHT_START <= t < DAYLIGHT_END
+
+    @property
+    def darkness(self) -> float:
+        """0 at noon, 1 at night. Lerps through dawn and dusk."""
+        return darkness_at(self.time_of_day)
 
     def toggle_pause(self) -> None:
         if self.speed == 0.0:
@@ -90,3 +100,18 @@ class Clock:
         if value == int(value):
             return f"{int(value)}x"
         return f"{value:g}x"
+
+
+def darkness_at(tod: float) -> float:
+    t = tod % 1.0
+    keys = _DARKNESS_KEYS
+    for i in range(len(keys) - 1):
+        t0, d0 = keys[i]
+        t1, d1 = keys[i + 1]
+        if t0 <= t < t1 or (i == len(keys) - 2 and t >= t0):
+            if d0 == d1:
+                return d0
+            u = (t - t0) / max(t1 - t0, 1e-9)
+            u = u * u * (3.0 - 2.0 * u)
+            return d0 * (1.0 - u) + d1 * u
+    return 1.0

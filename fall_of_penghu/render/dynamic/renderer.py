@@ -9,6 +9,7 @@ from fall_of_penghu.render.dynamic.icons import CHIP, IconStore
 from fall_of_penghu.render.static.scene import palette_for
 from fall_of_penghu.render.static.tod import contrast_rgb
 from fall_of_penghu.selection import Selection
+from fall_of_penghu.vision import SCATTER_COLOR, SCATTER_LINE, VISION_RINGS
 from fall_of_penghu.world.entities import (
     DynamicObject,
     Entities,
@@ -25,7 +26,10 @@ ROUTE_COLOR = (120, 200, 255, 180)
 SELECT_COLOR = (255, 230, 80, 220)
 RING_SEGS = 72
 RING_COLOR = (70, 190, 120, 90)
+PRIMITIVE_RING = (70, 170, 220, 110)
+ADVANCED_RING = (170, 90, 220, 110)
 ENGAGE_COLOR = (235, 200, 40, 150)
+FOCUS_COLOR = (255, 150, 50, 200)
 HEADING_PX = 18.0
 HEADING_GAP = ICON_PX * 0.5
 ARROW_PX = 5.5
@@ -34,6 +38,7 @@ XFER_ARC_SEGS = 48
 MISSILE_ON = (255, 190, 40, 230)
 MISSILE_OFF = (220, 45, 40, 230)
 TRACER_COLOR = (235, 210, 50, 220)
+SHELL_COLOR = (230, 110, 40, 230)
 CHINA_VISION = (220, 40, 40, 220)
 CHINA_MEMORY = (235, 200, 40, 220)
 MISSILE_BLINK_S = 0.16
@@ -80,6 +85,8 @@ class DynamicRenderer:
         tod: float = 0.5,
         perception: Perception | None = None,
         now_sim: float = 0.0,
+        vision_on: set[str] | None = None,
+        mouse_world: tuple[float, float] | None = None,
     ) -> None:
         visible = entities.snapshot(FACTION_PLAYER)
         ink = contrast_rgb(tod)
@@ -95,6 +102,21 @@ class DynamicRenderer:
                     screen_h,
                     RING_COLOR,
                 )
+            else:
+                enabled = set() if vision_on is None else vision_on
+                for ring_id, channel, cover, color, _label in VISION_RINGS:
+                    if ring_id not in enabled:
+                        continue
+                    self._draw_rings(
+                        renderer,
+                        camera,
+                        perception.sensor_rings(
+                            FACTION_PLAYER, channel, cover=cover
+                        ),
+                        screen_w,
+                        screen_h,
+                        color,
+                    )
             self._draw_rings(
                 renderer,
                 camera,
@@ -124,15 +146,19 @@ class DynamicRenderer:
         intercepts: list[tuple[object, float]] = []
         headings: dict[int, list[list[tuple[float, float]]]] = {}
         tracers: list[list[tuple[float, float]]] = []
+        shells: list[list[tuple[float, float]]] = []
         for item, alpha in marks:
             if getattr(item, "stowed", False):
                 continue
             kind = getattr(item, "kind", "")
             sx, sy = camera.world_to_screen(item.x, item.y, screen_w, screen_h)
-            if kind == "tracer":
+            if kind in ("tracer", "shell"):
                 streak = _heading_world_streak(camera, item, screen_w, screen_h)
                 if streak is not None:
-                    tracers.append(streak)
+                    if kind == "shell":
+                        shells.append(streak)
+                    else:
+                        tracers.append(streak)
                 continue
             if kind == "intercept" and not radar:
                 if _flame_hits_view(camera, item, screen_w, screen_h, margin):
@@ -217,6 +243,22 @@ class DynamicRenderer:
             renderer.overlay_aalines(routes, ROUTE_COLOR)
         if tracers:
             renderer.overlay_aalines(tracers, TRACER_COLOR)
+        if shells:
+            renderer.overlay_aalines(shells, SHELL_COLOR)
+        if not radar:
+            self._draw_artillery_marks(
+                renderer,
+                camera,
+                entities,
+                selection,
+                perception,
+                screen_w,
+                screen_h,
+                mouse_world,
+            )
+            self._draw_focus_marks(
+                renderer, camera, entities, selection, screen_w, screen_h
+            )
 
         if camera.debug_mode and perception is not None:
             self._draw_china_debug(
@@ -286,6 +328,89 @@ class DynamicRenderer:
             renderer.overlay_aalines(wrecked, CHINA_MEMORY)
         if live:
             renderer.overlay_aalines(live, CHINA_VISION)
+
+    def _draw_artillery_marks(
+        self,
+        renderer,
+        camera: Camera,
+        entities: Entities,
+        selection: Selection,
+        perception: Perception | None,
+        screen_w: int,
+        screen_h: int,
+        mouse_world: tuple[float, float] | None,
+    ) -> None:
+        catalog = None if perception is None else perception.catalog
+        rings: list[tuple[float, float, float]] = []
+        lines: list[list[tuple[float, float]]] = []
+        for item in entities.items:
+            if getattr(item, "kind", "") != "shell" or not item.active:
+                continue
+            scatter = float(getattr(item, "scatter_m", 0.0) or 0.0)
+            mx = float(getattr(item, "mark_x", item.aim_x))
+            my = float(getattr(item, "mark_y", item.aim_y))
+            fx = float(getattr(item, "from_x", item.x))
+            fy = float(getattr(item, "from_y", item.y))
+            if scatter > 1.0:
+                rings.append((mx, my, scatter))
+            p0 = camera.world_to_screen(fx, fy, screen_w, screen_h)
+            p1 = camera.world_to_screen(mx, my, screen_w, screen_h)
+            if _polyline_hits_view([p0, p1], screen_w, screen_h):
+                lines.append([p0, p1])
+        aiming = bool(getattr(selection, "artillery_aim", False))
+        for oid in selection.selected:
+            obj = entities.get(oid)
+            if obj is None or obj.kind != "artillery" or obj.faction != FACTION_PLAYER:
+                continue
+            mark = None
+            if aiming and mouse_world is not None:
+                mark = mouse_world
+            elif getattr(obj, "aim_xy", None) is not None:
+                mark = obj.aim_xy
+            if mark is None or catalog is None:
+                continue
+            dist = hypot(mark[0] - obj.x, mark[1] - obj.y)
+            scatter = catalog.scatter_m(obj.kind, dist)
+            if scatter > 1.0:
+                rings.append((mark[0], mark[1], scatter))
+        if lines:
+            renderer.overlay_aalines(lines, SCATTER_LINE)
+        if rings:
+            self._draw_rings(renderer, camera, rings, screen_w, screen_h, SCATTER_COLOR)
+
+    def _draw_focus_marks(
+        self,
+        renderer,
+        camera: Camera,
+        entities: Entities,
+        selection: Selection,
+        screen_w: int,
+        screen_h: int,
+    ) -> None:
+        ids: set[str] = set()
+        for oid in selection.selected:
+            obj = entities.get(oid)
+            ids |= set(getattr(obj, "focus_ids", ()) or ())
+        if not ids:
+            return
+        half = CHIP * 0.5 + 3.0
+        boxes: list[list[tuple[float, float]]] = []
+        for fid in ids:
+            target = entities.get(fid)
+            if target is None or not target.active:
+                continue
+            sx, sy = camera.world_to_screen(target.x, target.y, screen_w, screen_h)
+            boxes.append(
+                [
+                    (sx - half, sy - half),
+                    (sx + half, sy - half),
+                    (sx + half, sy + half),
+                    (sx - half, sy + half),
+                    (sx - half, sy - half),
+                ]
+            )
+        if boxes:
+            renderer.overlay_aalines(boxes, FOCUS_COLOR)
 
     def _draw_rings(
         self,
@@ -600,7 +725,7 @@ def _missile_on(now_sim: float) -> bool:
 
 def _show_heading(item: object) -> bool:
     kind = getattr(item, "kind", "")
-    if kind in ("intercept", "tracer"):
+    if kind in ("intercept", "tracer", "shell"):
         return False
     return bool(getattr(item, "moving", False))
 

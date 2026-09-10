@@ -9,6 +9,7 @@ from fall_of_penghu.world.entities import (
     GameObject,
     ObjectManager,
     SetDoctrine,
+    SetEngageFilter,
     SetRoute,
 )
 from fall_of_penghu.world.map import LineFeature, MapData, PolyFeature, load_map
@@ -28,6 +29,7 @@ __all__ = [
     "ObjectManager",
     "PolyFeature",
     "SetDoctrine",
+    "SetEngageFilter",
     "SetRoute",
     "World",
     "load_map",

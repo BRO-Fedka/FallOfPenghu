@@ -4,6 +4,7 @@ from math import hypot
 
 from fall_of_penghu.camera import Camera
 from fall_of_penghu.world.entities import Entities, FACTION_PLAYER, GameObject
+from fall_of_penghu.world.entities.kinds import SHOT_KINDS, is_static_kind
 
 PICK_PX = 14.0
 DRAG_PX = 5.0
@@ -24,11 +25,15 @@ class Selection:
         self.box: tuple[int, int, int, int] | None = None
         self.port_cmd: str | None = None
         self.port_id: str | None = None
+        self.artillery_aim = False
+        self.pick_targets = False
 
     def clear(self) -> None:
         self.selected.clear()
         self.port_cmd = None
         self.port_id = None
+        self.artillery_aim = False
+        self.pick_targets = False
 
     def toggle(self, object_id: str) -> None:
         if object_id in self.selected:
@@ -40,6 +45,8 @@ class Selection:
         self.selected = {object_id}
         self.port_cmd = None
         self.port_id = None
+        self.artillery_aim = False
+        self.pick_targets = False
 
     def apply_box(
         self,
@@ -65,7 +72,7 @@ class Selection:
         pool = list(entities.items) if debug else entities.snapshot(FACTION_PLAYER)
         for obj in pool:
             if not debug and (
-                obj.faction != FACTION_PLAYER or obj.kind in ("intercept", "tracer")
+                obj.faction != FACTION_PLAYER or obj.kind in ("intercept", "tracer", "shell")
             ):
                 continue
             sx, sy = camera.world_to_screen(obj.x, obj.y, screen_w, screen_h)
@@ -77,6 +84,36 @@ class Selection:
             self.selected = hits
         self.port_cmd = None
         self.port_id = None
+        self.artillery_aim = False
+        self.pick_targets = False
+
+    def foes_in_box(
+        self,
+        entities: Entities,
+        camera: Camera,
+        screen_w: int,
+        screen_h: int,
+        x0: int,
+        y0: int,
+        x1: int,
+        y1: int,
+    ) -> set[str]:
+        left = min(x0, x1)
+        right = max(x0, x1)
+        top = min(y0, y1)
+        bottom = max(y0, y1)
+        hits: set[str] = set()
+        for obj in entities.snapshot(FACTION_PLAYER):
+            if obj.faction == FACTION_PLAYER:
+                continue
+            if obj.kind in SHOT_KINDS or is_static_kind(obj.kind):
+                continue
+            if getattr(obj, "stowed", False) or not obj.active:
+                continue
+            sx, sy = camera.world_to_screen(obj.x, obj.y, screen_w, screen_h)
+            if left <= sx <= right and top <= sy <= bottom:
+                hits.add(obj.id)
+        return hits
 
     def update_hover(
         self,
@@ -111,7 +148,7 @@ def pick_at(
     best_d = radius2
     pool = source if source is not None else entities.snapshot(FACTION_PLAYER)
     for obj in pool:
-        if obj.kind in ("intercept", "tracer") and not include_intercept:
+        if obj.kind in ("intercept", "tracer", "shell") and not include_intercept:
             continue
         if own_only and obj.faction != FACTION_PLAYER:
             continue

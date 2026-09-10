@@ -13,7 +13,9 @@ from fall_of_penghu.render import create_game_display
 from fall_of_penghu.render.dynamic import DynamicRenderer
 from fall_of_penghu.selection import Selection
 from fall_of_penghu.debug_palette import DebugPalette
+from fall_of_penghu.engage_palette import EngagePalette
 from fall_of_penghu.ui import Hud
+from fall_of_penghu.vision_palette import VisionPalette
 from fall_of_penghu.world import FACTION_PLAYER, World
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -54,6 +56,8 @@ def run() -> None:
     hud = Hud()
     palette = DebugPalette()
     palette.refresh(world.catalog)
+    engage = EngagePalette()
+    vision = VisionPalette()
     dynamic = DynamicRenderer()
     chat = ChatLog()
     china = ChinaDirector(world)
@@ -67,6 +71,17 @@ def run() -> None:
 
         for event in pygame.event.get():
             if camera.debug_mode and palette.handle_event(event, screen_w, screen_h):
+                continue
+            if vision.handle_event(event, screen_w, screen_h):
+                continue
+            if engage.handle_event(
+                event,
+                selection,
+                world.entities,
+                world.catalog,
+                screen_w,
+                screen_h,
+            ):
                 continue
             if hud.handle_event(
                 event,
@@ -86,6 +101,8 @@ def run() -> None:
                 camera.debug_mode,
                 chat,
                 palette,
+                engage,
+                vision,
                 selection,
                 world.entities,
                 camera,
@@ -101,6 +118,8 @@ def run() -> None:
                     camera.debug_mode,
                     chat,
                     palette,
+                    engage,
+                    vision,
                     selection,
                     world.entities,
                     camera,
@@ -140,6 +159,8 @@ def run() -> None:
             camera.debug_mode,
             chat,
             palette,
+            engage,
+            vision,
             selection,
             world.entities,
             camera,
@@ -176,6 +197,8 @@ def run() -> None:
             tod,
             perception=world.perception,
             now_sim=world.clock.simulation_time,
+            vision_on=vision.enabled,
+            mouse_world=camera.screen_to_world(*mouse, screen_w, screen_h),
         )
         hover = (
             world.entities.get(selection.hover_id)
@@ -200,6 +223,8 @@ def run() -> None:
             perception=world.perception,
             chat=chat,
             palette=palette,
+            engage=engage,
+            vision=vision,
         )
         renderer.present()
 
