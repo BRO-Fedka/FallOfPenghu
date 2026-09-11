@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 from fall_of_penghu.world.entities.command import SetRoute
 from fall_of_penghu.world.entities.dynamic import DynamicObject
 from fall_of_penghu.world.entities.game_object import FACTION_CHINA
+from fall_of_penghu.world.entities.kinds import SHOT_KINDS, is_static_kind
 from fall_of_penghu.world.entities.land.geom import dist_poly, point_in_poly
 
 if TYPE_CHECKING:
@@ -195,6 +196,24 @@ def capture_islands(world: World) -> list[int]:
         if iid not in out and not held.get(iid):
             out.append(iid)
     return out
+
+
+def island_has_foe(world: World, island: int) -> bool:
+    """Any live player unit China can see standing on that island."""
+    planner = world.entities.planner
+    if planner is None:
+        return False
+    islands = planner.land.islands
+    for obj in world.perception.visible_objects(FACTION_CHINA):
+        if obj.faction == FACTION_CHINA or not obj.active:
+            continue
+        if is_static_kind(obj.kind) or obj.kind in SHOT_KINDS:
+            continue
+        if getattr(obj, "stowed", False):
+            continue
+        if islands.at(obj.x, obj.y) == island:
+            return True
+    return False
 
 
 def island_stand(world: World, island: int) -> tuple[float, float] | None:

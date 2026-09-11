@@ -16,6 +16,7 @@ from fall_of_penghu.ai.china_util import (
     border_xy,
     capture_islands,
     china_by_island,
+    island_has_foe,
     island_stand,
     islands_linked,
     is_surplus,
@@ -32,6 +33,8 @@ if TYPE_CHECKING:
     from fall_of_penghu.world.world import World
 
 CARGO_KINDS = ("infantry", "artillery", "tank")
+OCCUPY_RETRY_S = 900.0
+MAX_OCCUPY = 2
 
 
 class NavalOps:
@@ -44,10 +47,13 @@ class NavalOps:
         self._ferry_n = 0
         self._cargo_n = 0
         self._beach_i = 0
+        self._occupy_sim: dict[int, float] = {}
+        self._occupy_ids: set[str] = set()
 
     def step(self, world: World, intel: IntelOps) -> None:
         self._spawn_landing_ships(world)
         ships = _landing_ships(world)
+        self._occupy_quiet(world, ships)
         self._drive_hops(world, intel)
         self._drive_reloading(world, intel, ships)
         active = _assault_ships(ships)
@@ -84,6 +90,82 @@ class NavalOps:
         world.entities.add(ship)
         sail(world, ship, station)
         self.log.emit(now, "spawn", f"{oid} border {edge[0]:.0f},{edge[1]:.0f}")
+
+    def _occupy_quiet(self, world: World, ships: list[DynamicObject]) -> None:
+        """One ferry of infantry per inhabited island where nothing is defending.
+
+        Houses and roads mean lookouts, and an island with no visible defender is
+        free real estate: a single squad ashore denies it and then searches its
+        forest. Strictly one boat per island, retried only if that boat is lost.
+        """
+        now = world.clock.simulation_time
+        lookouts = world.perception.lookouts
+        if lookouts is None:
+            return
+        inhabited = set(lookouts.inhabited)
+        held = china_by_island(world)
+        self._occupy_ids = {
+            oid
+            for oid in self._occupy_ids
+            if _boat_running(world.entities.get(oid))
+        }
+        if len(self._occupy_ids) >= MAX_OCCUPY:
+            return
+        for iid in capture_islands(world):
+            if iid not in inhabited or held.get(iid):
+                continue
+            if island_has_foe(world, iid):
+                continue
+            if now - self._occupy_sim.get(iid, -1e9) < OCCUPY_RETRY_S:
+                continue
+            if "infantry" in world.transport.inbound_kinds(iid):
+                continue
+            beach = _island_beach(world, iid)
+            if beach is None:
+                continue
+            boat = self._send_squad(world, ships, beach)
+            if boat is None:
+                continue
+            self._occupy_sim[iid] = now
+            self._occupy_ids.add(boat)
+            self.log.emit(now, "occupy", f"island {iid} quiet — {boat} takes a squad")
+            if len(self._occupy_ids) >= MAX_OCCUPY:
+                return
+
+    def _send_squad(
+        self, world: World, ships: list[DynamicObject], beach: tuple[float, float]
+    ) -> str | None:
+        now = world.clock.simulation_time
+        donors = [
+            ship
+            for ship in ships
+            if ship.magazine > 0
+            and (ship.task or "station") == "station"
+            and now >= float(ship.weapon_ready_sim or 0.0)
+        ]
+        if not donors:
+            return None
+        ship = min(donors, key=lambda s: hypot(s.x - beach[0], s.y - beach[1]))
+        spare = [
+            boat
+            for boat in _idle_shore_boats(world)
+            if (boat.task or "") == "hold_shore"
+            and hypot(boat.x - ship.x, boat.y - ship.y) <= ARRIVE_M
+        ]
+        ferry = min(spare, key=lambda b: b.id) if spare else None
+        if ferry is not None:
+            ok = self._load_idle(world, ship, ferry, beach, kind="infantry")
+            boat_id = ferry.id
+        else:
+            if _china_ferry_count(world) >= MAX_SHORE_BOATS:
+                return None
+            boat_id = f"c_ferry_{self._ferry_n + 1:03d}"
+            ok = self._launch_landing(world, ship, beach, kind="infantry")
+        if not ok:
+            return None
+        ship.magazine -= 1
+        ship.weapon_ready_sim = now + LANDING_LAUNCH_S
+        return boat_id
 
     def _drive_hops(self, world: World, intel: IntelOps) -> None:
         idle = [
@@ -236,8 +318,9 @@ class NavalOps:
         world: World,
         ship: DynamicObject,
         beach: tuple[float, float],
+        kind: str | None = None,
     ) -> bool:
-        cargo, ferry = self._make_boat(world, ship)
+        cargo, ferry = self._make_boat(world, ship, kind=kind)
         world.entities.add(cargo)
         world.entities.add(ferry)
         if not world.transport.assault_beach(
@@ -258,8 +341,9 @@ class NavalOps:
         ship: DynamicObject,
         ferry: DynamicObject,
         beach: tuple[float, float],
+        kind: str | None = None,
     ) -> bool:
-        cargo, _ = self._make_boat(world, ship, ferry=ferry)
+        cargo, _ = self._make_boat(world, ship, ferry=ferry, kind=kind)
         world.entities.add(cargo)
         ferry.task = ""
         ferry.route = None
@@ -281,8 +365,10 @@ class NavalOps:
         world: World,
         ship: DynamicObject,
         ferry: DynamicObject | None = None,
+        kind: str | None = None,
     ) -> tuple[DynamicObject, DynamicObject]:
-        kind = CARGO_KINDS[self._cargo_n % len(CARGO_KINDS)]
+        if kind is None:
+            kind = CARGO_KINDS[self._cargo_n % len(CARGO_KINDS)]
         self._cargo_n += 1
         cargo = DynamicObject(
             id=f"c_{kind}_{self._cargo_n:03d}",
@@ -335,6 +421,13 @@ def _assault_ships(ships: list[DynamicObject]) -> list[DynamicObject]:
     ]
     ready.sort(key=lambda ship: ship.id)
     return ready[:MAX_ASSAULT_SHIPS]
+
+
+def _boat_running(boat: DynamicObject | None) -> bool:
+    """A dispatched occupation boat still on the job, cargo aboard or ashore."""
+    if boat is None or not boat.active:
+        return False
+    return bool(boat.cargo_id) or (boat.task or "") not in ("hold_shore", "reload", "")
 
 
 def _china_ferry_count(world: World) -> int:

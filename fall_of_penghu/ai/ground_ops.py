@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 from fall_of_penghu.ai.china_util import (
     china_by_island,
     capture_islands,
+    island_has_foe,
     island_stand,
     islands_linked,
     is_surplus,
@@ -156,7 +157,7 @@ def _assign_garrison(
             for island, units in held.items():
                 if island == dest_iid or not islands_linked(world, island, dest_iid):
                     continue
-                if _island_has_foe(world, island):
+                if island_has_foe(world, island):
                     continue
                 for unit in units:
                     if unit.id in busy or unit.id in used or unit.kind != kind:
@@ -215,23 +216,6 @@ def _enroute_kinds(world: World, dest_iid: int) -> set[str]:
         if at == dest_iid:
             kinds.add(obj.kind)
     return kinds
-
-
-def _island_has_foe(world: World, island: int) -> bool:
-    planner = world.entities.planner
-    if planner is None:
-        return False
-    islands = planner.land.islands
-    for obj in world.perception.visible_objects(FACTION_CHINA):
-        if obj.faction != FACTION_PLAYER or not obj.active:
-            continue
-        if is_static_kind(obj.kind) or obj.kind in SHOT_KINDS:
-            continue
-        if getattr(obj, "stowed", False):
-            continue
-        if islands.at(obj.x, obj.y) == island:
-            return True
-    return False
 
 
 def _forest_dest(
