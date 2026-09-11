@@ -6,6 +6,7 @@ from fall_of_penghu.world.entities.command import (
     SetEngageFilter,
     SetFocus,
     SetRoute,
+    WreckObject,
 )
 from fall_of_penghu.world.entities.intercept import Intercept
 from fall_of_penghu.world.entities.tracer import Tracer
@@ -43,4 +44,5 @@ __all__ = [
     "SetRoute",
     "StaticObject",
     "Tracer",
+    "WreckObject",
 ]

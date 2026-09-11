@@ -17,6 +17,8 @@ from fall_of_penghu.engage_palette import EngagePalette
 from fall_of_penghu.ui import Hud
 from fall_of_penghu.vision_palette import VisionPalette
 from fall_of_penghu.world import FACTION_PLAYER, World
+from fall_of_penghu.world.events import ContactNotice
+from fall_of_penghu.world.perception.lookout import faction_on_islands
 
 ROOT = Path(__file__).resolve().parent.parent
 MAP_DIR = ROOT / "penghu_map_v1"
@@ -63,6 +65,7 @@ def run() -> None:
     china = ChinaDirector(world)
     china.step(world)
     world.perception.step(world)
+    defeated = False
 
     while not controls.quit:
         dt_wall = frame_clock.tick(6000) / 1000.0
@@ -172,11 +175,28 @@ def run() -> None:
             selection.hover_id = None
 
         world.clock.advance(dt_wall)
-        world.entities.step(world.clock.dt_sim)
-        world.transport.step(world)
-        china.step(world)
-        world.perception.step(world)
-        world.combat.step(world)
+        if not defeated:
+            world.entities.step(world.clock.dt_sim)
+            world.transport.step(world)
+            china.step(world)
+            world.perception.step(world)
+            world.combat.step(world)
+            islands = None
+            if world.entities.planner is not None:
+                islands = world.entities.planner.land.islands
+            if not faction_on_islands(islands, world.entities.items, FACTION_PLAYER):
+                defeated = True
+                world.clock.set_speed(0.0)
+                chat.push(
+                    ContactNotice(
+                        faction=FACTION_PLAYER,
+                        object_ids=(),
+                        x=camera.x,
+                        y=camera.y,
+                        text="Defeat — no player units remain on the islands",
+                        slow_time=False,
+                    )
+                )
         for notice in world.drain_notices():
             if notice.faction != FACTION_PLAYER:
                 continue
@@ -187,6 +207,7 @@ def run() -> None:
 
         tod = world.clock.time_of_day
         stats = renderer.draw(camera, screen_w, screen_h, tod)
+        mouse_world = camera.screen_to_world(*mouse, screen_w, screen_h)
         dynamic.draw(
             renderer,
             camera,
@@ -198,13 +219,17 @@ def run() -> None:
             perception=world.perception,
             now_sim=world.clock.simulation_time,
             vision_on=vision.enabled,
-            mouse_world=camera.screen_to_world(*mouse, screen_w, screen_h),
+            mouse_world=mouse_world,
+            heatmaps=china.intel.heat if camera.debug_mode else None,
         )
         hover = (
             world.entities.get(selection.hover_id)
             if selection.hover_id
             else None
         )
+        heat_probe = None
+        if camera.debug_mode:
+            heat_probe = china.intel.sample(*mouse_world)
         hud.blit(
             renderer,
             camera=camera,
@@ -212,7 +237,7 @@ def run() -> None:
             fps=frame_clock.get_fps(),
             backend=display.gpu.backend,
             stats=stats,
-            mouse_world=camera.screen_to_world(*mouse, screen_w, screen_h),
+            mouse_world=mouse_world,
             mouse_screen=mouse,
             hover=hover,
             selection=selection,
@@ -225,6 +250,8 @@ def run() -> None:
             palette=palette,
             engage=engage,
             vision=vision,
+            heat_probe=heat_probe,
+            defeated=defeated,
         )
         renderer.present()
 

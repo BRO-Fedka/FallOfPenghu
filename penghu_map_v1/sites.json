@@ -1009,6 +1009,28 @@
       "heading": 0.0,
       "speed_mps": 1.0,
       "mobility": "land"
+    },
+    {
+      "id": "dbg_scout_003",
+      "kind": "scout",
+      "name": "Scout",
+      "faction": "P",
+      "x": 9857.89533846994,
+      "y": 9926.700172696257,
+      "heading": 0.0,
+      "speed_mps": 18.0,
+      "mobility": "air"
+    },
+    {
+      "id": "dbg_scout_004",
+      "kind": "scout",
+      "name": "Scout",
+      "faction": "P",
+      "x": 2473.4778909119977,
+      "y": 6625.431196140942,
+      "heading": 0.0,
+      "speed_mps": 18.0,
+      "mobility": "air"
     }
   ],
   "removed_ids": [

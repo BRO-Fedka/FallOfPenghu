@@ -25,7 +25,6 @@ LAND_OFFROAD_COST = 3.2
 SEA_CELL_M = 150.0
 SEA_SAMPLE_M = 80.0
 SEA_PAD_M = 8_000.0
-SEA_WEST_M = 58_000.0
 SEA_MIN_SPAN_M = 70_000.0
 
 
@@ -436,7 +435,8 @@ class Planner:
 
     def _build_sea(self) -> None:
         bbox = self._map.manifest.get("bbox_penghu") or [-22000, -32000, 21000, 35000]
-        minx = float(bbox[0]) - max(SEA_PAD_M, SEA_WEST_M)
+        frame_min = self._map.manifest.get("frame_min_xy") or [-100000.0, -100000.0]
+        minx = min(float(bbox[0]) - SEA_PAD_M, float(frame_min[0]) + SEA_CELL_M)
         miny = float(bbox[1]) - SEA_PAD_M
         maxx = float(bbox[2]) + SEA_PAD_M
         maxy = float(bbox[3]) + SEA_PAD_M

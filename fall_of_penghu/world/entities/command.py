@@ -40,4 +40,9 @@ class SetFocus:
     ids: tuple[str, ...] | None
 
 
-Command = SetRoute | Halt | SetDoctrine | SetEngageFilter | SetAim | SetFocus
+@dataclass(frozen=True)
+class WreckObject:
+    object_id: str
+
+
+Command = SetRoute | Halt | SetDoctrine | SetEngageFilter | SetAim | SetFocus | WreckObject

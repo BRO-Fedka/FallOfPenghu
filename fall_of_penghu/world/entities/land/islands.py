@@ -29,6 +29,21 @@ class IslandIndex:
     def canonical(self, index: int) -> int:
         return self._alias.get(index, index)
 
+    def ids(self) -> tuple[int, ...]:
+        n = len(self._world.coast)
+        return tuple(sorted({self.canonical(i) for i in range(n)}))
+
+    def bbox(self, island: int) -> tuple[float, float, float, float]:
+        minx = miny = 1e30
+        maxx = maxy = -1e30
+        for feat in self.features(island):
+            a, b, c, d = feat.bbox
+            minx = min(minx, a)
+            miny = min(miny, b)
+            maxx = max(maxx, c)
+            maxy = max(maxy, d)
+        return (minx, miny, maxx, maxy)
+
     def at(self, x: float, y: float) -> int | None:
         hit = _raw_at(self._world, x, y)
         if hit is None:

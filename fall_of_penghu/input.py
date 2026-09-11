@@ -279,6 +279,7 @@ class Input:
                     screen_h,
                     *event.pos,
                     own_only=False,
+                    prefer_own=False,
                     source=list(entities.snapshot(FACTION_PLAYER)),
                 )
                 if (
@@ -348,12 +349,27 @@ class Input:
             return
         wx, wy = camera.screen_to_world(*event.pos, screen_w, screen_h)
         target = (wx, wy)
+        shift = bool(pygame.key.get_mods() & pygame.KMOD_SHIFT)
         for oid in list(selection.selected):
             obj = entities.get(oid)
             if not isinstance(obj, DynamicObject) or not obj.active:
                 continue
             if obj.faction != FACTION_PLAYER or obj.kind in ("intercept", "tracer", "shell"):
                 continue
+            if shift and obj.mobility in ("sea", "air"):
+                pts = selection.waypoints.setdefault(oid, [])
+                pts.append(target)
+                entities.dispatch(
+                    SetRoute(
+                        object_id=oid,
+                        mode="manual",
+                        target=pts[-1],
+                        vertices=tuple(pts),
+                    ),
+                    as_faction=FACTION_PLAYER,
+                )
+                continue
+            selection.waypoints.pop(oid, None)
             entities.dispatch(
                 SetRoute(object_id=oid, mode="auto", target=target),
                 as_faction=FACTION_PLAYER,

@@ -14,7 +14,11 @@ from fall_of_penghu.world.perception.alerts import AlertTracker
 from fall_of_penghu.world.perception.catalog import DetectionCatalog
 from fall_of_penghu.world.perception.cover import CoverIndex
 from fall_of_penghu.world.perception.imprint import ContactImprint
-from fall_of_penghu.world.perception.lookout import IslandLookouts
+from fall_of_penghu.world.perception.lookout import (
+    IslandLookouts,
+    china_held,
+    occupants,
+)
 from fall_of_penghu.world.perception.satellite import SatelliteStatus, SatelliteWindows
 
 if TYPE_CHECKING:
@@ -57,6 +61,7 @@ class Perception:
         ] = {}
         self._imprint_n = 0
         self._darkness = 0.0
+        self.china_held: set[int] = set()
 
     def bind_map(self, world: World) -> None:
         self.cover = CoverIndex(world.map)
@@ -145,6 +150,12 @@ class Perception:
                 bool(getattr(obj, "orient_radar", False)),
                 bool(obj.active),
             )
+        lookouts = self.lookouts
+        if lookouts is not None:
+            occ = occupants(lookouts.islands, objects)
+            self.china_held = china_held(lookouts.inhabited, occ)
+        else:
+            self.china_held = set()
         for faction in FACTIONS:
             seen = self._compute(faction, objects, darkness, sat_on)
             ids = {obj.id for obj in seen}
@@ -248,9 +259,11 @@ class Perception:
                 if self.catalog.darkness_scale(channel, darkness) <= 0.0:
                     continue
                 emitters.append((obj, channel))
-        lookouts = self.lookouts if faction == FACTION_PLAYER else None
+        lookouts = self.lookouts
         occupied: set[int] = set()
-        if lookouts is not None:
+        base: frozenset[int] | set[int] | None = None
+        deny: set[int] | None = None
+        if lookouts is not None and faction in (FACTION_PLAYER, FACTION_CHINA):
             occupied = lookouts.occupied_by(
                 own,
                 ground_kinds=frozenset(
@@ -259,6 +272,12 @@ class Perception:
                     if self.catalog.cover_role(kind) == "ground"
                 ),
             )
+            if faction == FACTION_PLAYER:
+                deny = self.china_held
+            else:
+                base = self.china_held
+        else:
+            lookouts = None
         sat_for_faction = sat_on and faction == self.catalog.sat_faction
         cover = self.cover
         seen = list(own)
@@ -275,6 +294,8 @@ class Perception:
                 occupied,
                 sat_for_faction,
                 darkness,
+                base=base,
+                deny=deny,
             ):
                 seen.append(target)
         return seen
@@ -289,6 +310,9 @@ class Perception:
         occupied: set[int],
         sat_on: bool,
         darkness: float,
+        *,
+        base: frozenset[int] | set[int] | None = None,
+        deny: set[int] | None = None,
     ) -> bool:
         if "satellite" in channels and sat_on:
             if self.catalog.cover_factor("satellite", cover) > 0.0:
@@ -298,7 +322,7 @@ class Perception:
             if radius is not None:
                 radius *= self.catalog.cover_factor("lookout", cover)
                 if radius > 0.0 and lookouts.distance_m(
-                    target.x, target.y, occupied
+                    target.x, target.y, occupied, base=base, deny=deny
                 ) <= radius:
                     return True
         tx, ty = target.x, target.y

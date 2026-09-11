@@ -87,6 +87,7 @@ class DynamicRenderer:
         now_sim: float = 0.0,
         vision_on: set[str] | None = None,
         mouse_world: tuple[float, float] | None = None,
+        heatmaps=None,
     ) -> None:
         visible = entities.snapshot(FACTION_PLAYER)
         ink = contrast_rgb(tod)
@@ -264,6 +265,10 @@ class DynamicRenderer:
             self._draw_china_debug(
                 renderer, camera, perception, screen_w, screen_h
             )
+        if camera.debug_mode and heatmaps is not None:
+            self._draw_heatmaps(
+                renderer, camera, heatmaps, screen_w, screen_h
+            )
 
         if selection.box is not None:
             x0, y0, x1, y1 = selection.box
@@ -328,6 +333,33 @@ class DynamicRenderer:
             renderer.overlay_aalines(wrecked, CHINA_MEMORY)
         if live:
             renderer.overlay_aalines(live, CHINA_VISION)
+
+    def _draw_heatmaps(
+        self, renderer, camera: Camera, heatmaps, screen_w: int, screen_h: int
+    ) -> None:
+        minx, miny, maxx, maxy = camera.world_bounds(screen_w, screen_h)
+        cells = list(heatmaps.iter_view(minx, miny, maxx, maxy))
+        if not cells:
+            return
+        peak = 1.0
+        for _x0, _y0, _x1, _y1, t, land_h, aa in cells:
+            peak = max(peak, t, land_h, aa)
+        surf = pygame.Surface((screen_w, screen_h), pygame.SRCALPHA)
+        for x0, y0, x1, y1, t, land_h, aa in cells:
+            p0 = camera.world_to_screen(x0, y1, screen_w, screen_h)
+            p1 = camera.world_to_screen(x1, y0, screen_w, screen_h)
+            left = int(min(p0[0], p1[0]))
+            top = int(min(p0[1], p1[1]))
+            w = max(1, int(abs(p1[0] - p0[0])))
+            h = max(1, int(abs(p1[1] - p0[1])))
+            r = int(min(255, 255.0 * t / peak))
+            g = int(min(255, 255.0 * land_h / peak))
+            b = int(min(255, 255.0 * aa / peak))
+            a = int(min(140, 40 + 100.0 * max(t, land_h, aa) / peak))
+            if r + g + b <= 0:
+                continue
+            pygame.draw.rect(surf, (r, g, b, a), (left, top, w, h))
+        renderer.overlay(surf, (0, 0))
 
     def _draw_artillery_marks(
         self,

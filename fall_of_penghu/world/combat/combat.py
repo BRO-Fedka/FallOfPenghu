@@ -71,11 +71,13 @@ class Combat:
                 continue
             if obj.kind != "drone" or not obj.active or not obj.armed:
                 continue
-            if obj.route is not None:
-                continue
             target = _blast_target(world, obj, blast, catalog)
             if target is not None:
                 apply_damage(target, damage, world)
+                wreck(obj, world)
+                continue
+            if obj.route is not None:
+                continue
             wreck(obj, world)
 
     def _engage(
@@ -341,6 +343,8 @@ def _eligible(
     doctrine: str,
     catalog: DetectionCatalog,
 ) -> bool:
+    if foe.kind == "bridge":
+        return False
     if not catalog.can_engage(battery.kind, foe):
         return False
     if not catalog.wants_target(battery, foe):
@@ -413,6 +417,7 @@ def _blast_target(
         strike is not None
         and strike.active
         and strike.id != drone.id
+        and strike.kind != "bridge"
         and hypot(strike.x - drone.x, strike.y - drone.y) <= blast_m
         and catalog.wants_target(drone, strike)
     ):
@@ -422,7 +427,7 @@ def _blast_target(
     for obj in world.entities.items:
         if not obj.active or obj.id == drone.id or obj.faction == drone.faction:
             continue
-        if obj.kind in SHOT_KINDS:
+        if obj.kind in SHOT_KINDS or obj.kind == "bridge":
             continue
         if not catalog.wants_target(drone, obj):
             continue

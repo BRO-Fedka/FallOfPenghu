@@ -42,6 +42,10 @@ class LandRouter:
     def bind_bridges(self, sites: list[GameObject]) -> None:
         self._book.bind_sites(sites)
 
+    def connected(self, src: int, dst: int, intact: Intact) -> bool:
+        """True if intact bridges join the two islands (or they are the same)."""
+        return self._island_hops(src, dst, intact) is not None
+
     def nearest_road_point(
         self, x: float, y: float, max_m: float = 800.0
     ) -> tuple[float, float] | None:

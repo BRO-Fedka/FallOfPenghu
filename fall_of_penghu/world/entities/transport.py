@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 from fall_of_penghu.world.entities.command import SetRoute
 from fall_of_penghu.world.entities.dynamic import DynamicObject
-from fall_of_penghu.world.entities.game_object import FACTION_PLAYER, GameObject
+from fall_of_penghu.world.entities.game_object import FACTION_CHINA, FACTION_PLAYER, GameObject
 from fall_of_penghu.world.events import ContactNotice
 
 if TYPE_CHECKING:
@@ -43,6 +43,7 @@ class CrossingJob:
     beach_drop: bool
     auto: bool = True
     wait_sim: float | None = None
+    hold_shore: bool = False
 
 
 class Transport:
@@ -397,6 +398,7 @@ class Transport:
         *,
         home_id: str,
         unload_sim: float | None = None,
+        hold_shore: bool = False,
     ) -> bool:
         """PLA boat already carrying stowed cargo. No player notices."""
         world = self._world
@@ -432,6 +434,7 @@ class Transport:
             beach_drop=True,
             auto=True,
             wait_sim=unload_sim,
+            hold_shore=hold_shore,
         )
         self._jobs.append(job)
         _route(world, ferry, drop_meet)
@@ -439,6 +442,106 @@ class Transport:
             self._jobs = [item for item in self._jobs if item is not job]
             return False
         return True
+
+    def china_shuttle(
+        self,
+        ferry: DynamicObject,
+        cargo: DynamicObject,
+        dest: tuple[float, float],
+        *,
+        unload_sim: float | None = None,
+    ) -> bool:
+        """Move already-landed PLA from one island beach to another. Boat stays."""
+        world = self._world
+        if world is None:
+            return False
+        if ferry.faction != FACTION_CHINA or cargo.faction != FACTION_CHINA:
+            return False
+        if not ferry.active or ferry.kind != "ferry" or ferry.cargo_id:
+            return False
+        if not cargo.active or cargo.mobility != "land" or cargo.stowed:
+            return False
+        planner = world.entities.planner
+        if planner is None:
+            return False
+        here = _island_of(planner, cargo.x, cargo.y)
+        dest_island, dest_pt = _dest_island(planner, dest)
+        if here is None or dest_island is None or here == dest_island:
+            return False
+        self._cancel(world, cargo.id)
+        self._cancel(world, ferry.id)
+        meet = _best_shore_meet(
+            planner, here, (cargo.x, cargo.y), (ferry.x, ferry.y)
+        )
+        if meet is None:
+            return False
+        pickup, ferry_meet = meet
+        drop_meet_pair = _best_shore_meet(planner, dest_island, dest_pt, ferry_meet)
+        if drop_meet_pair is None:
+            return False
+        drop, drop_meet = drop_meet_pair
+        stand = _beach_stand(planner, dest_island, dest_pt)
+        home_id = ferry.home_port_id or ""
+        job = CrossingJob(
+            cargo_id=cargo.id,
+            ferry_id=ferry.id,
+            dest=stand,
+            drop=drop,
+            home_port_id=home_id,
+            dest_port_id=None,
+            pickup=pickup,
+            ferry_meet=ferry_meet,
+            drop_meet=drop_meet,
+            phase="to_pickup",
+            wait_until=0.0,
+            beach_load=True,
+            beach_drop=True,
+            auto=True,
+            wait_sim=unload_sim,
+            hold_shore=True,
+        )
+        self._jobs.append(job)
+        cargo.task = "shuttle"
+        ferry.task = "shuttle"
+        ferry.route = None
+        _route(world, ferry, ferry_meet)
+        _route(world, cargo, pickup)
+        if (
+            ferry.route is None
+            and hypot(ferry.x - ferry_meet[0], ferry.y - ferry_meet[1])
+            > WATER_ARRIVE_M
+        ):
+            self._jobs = [item for item in self._jobs if item is not job]
+            cargo.task = ""
+            ferry.task = "hold_shore"
+            return False
+        return True
+
+    def busy_ids(self) -> set[str]:
+        ids = {job.cargo_id for job in self._jobs if job.cargo_id}
+        ids.update(job.ferry_id for job in self._jobs if job.ferry_id)
+        ids.update(ferry_id for ferry_id, _port in self._recalls)
+        return ids
+
+    def inbound_kinds(self, island: int) -> set[str]:
+        world = self._world
+        if world is None:
+            return set()
+        planner = world.entities.planner
+        if planner is None:
+            return set()
+        kinds: set[str] = set()
+        for job in self._jobs:
+            cargo = world.entities.get(job.cargo_id)
+            if not isinstance(cargo, DynamicObject):
+                continue
+            dest = job.dest or job.drop
+            hit = planner.land.islands.at(*dest)
+            if hit is None:
+                hit = planner.land.islands.nearest(dest[0], dest[1], 400.0)
+            if hit == island:
+                kinds.add(cargo.kind)
+        return kinds
 
     def on_halt(self, object_id: str) -> None:
         if self._world is not None:
@@ -558,6 +661,10 @@ class Transport:
             if dest is not None and hypot(cargo.x - dest[0], cargo.y - dest[1]) > BOARD_M:
                 _route(world, cargo, dest)
             if ferry is not None and job.auto:
+                if job.hold_shore:
+                    ferry.task = "hold_shore"
+                    ferry.route = None
+                    return False
                 job.phase = "returning"
                 self._send_home(world, ferry, job.home_port_id)
                 return True

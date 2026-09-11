@@ -6,7 +6,8 @@ from fall_of_penghu.camera import Camera
 from fall_of_penghu.world.entities import Entities, FACTION_PLAYER, GameObject
 from fall_of_penghu.world.entities.kinds import SHOT_KINDS, is_static_kind
 
-PICK_PX = 14.0
+PICK_PX = 16.0
+PICK_OWN_PX = 28.0
 DRAG_PX = 5.0
 
 
@@ -27,6 +28,7 @@ class Selection:
         self.port_id: str | None = None
         self.artillery_aim = False
         self.pick_targets = False
+        self.waypoints: dict[str, list[tuple[float, float]]] = {}
 
     def clear(self) -> None:
         self.selected.clear()
@@ -34,6 +36,7 @@ class Selection:
         self.port_id = None
         self.artillery_aim = False
         self.pick_targets = False
+        self.waypoints.clear()
 
     def toggle(self, object_id: str) -> None:
         if object_id in self.selected:
@@ -47,6 +50,7 @@ class Selection:
         self.port_id = None
         self.artillery_aim = False
         self.pick_targets = False
+        self.waypoints.clear()
 
     def apply_box(
         self,
@@ -124,7 +128,15 @@ class Selection:
         sx: float,
         sy: float,
     ) -> None:
-        hit = pick_at(entities, camera, screen_w, screen_h, sx, sy)
+        hit = pick_at(
+            entities,
+            camera,
+            screen_w,
+            screen_h,
+            sx,
+            sy,
+            prefer_own=True,
+        )
         self.hover_id = hit.id if hit else None
 
 
@@ -139,21 +151,40 @@ def pick_at(
     own_only: bool = False,
     source: list[GameObject] | None = None,
     include_intercept: bool = False,
+    prefer_own: bool = True,
 ) -> GameObject | None:
-    mpp = camera.meters_per_pixel(screen_w)
-    radius_m = max(PICK_PX * mpp, 8.0)
-    radius2 = radius_m * radius_m
-    wx, wy = camera.screen_to_world(sx, sy, screen_w, screen_h)
-    best: GameObject | None = None
-    best_d = radius2
+    pick_r = max(PICK_PX, 8.0)
+    own_r = max(PICK_OWN_PX, pick_r)
+    pick_r2 = pick_r * pick_r
+    own_r2 = own_r * own_r
+    best_own: GameObject | None = None
+    best_own_d = own_r2
+    best_other: GameObject | None = None
+    best_other_d = pick_r2
     pool = source if source is not None else entities.snapshot(FACTION_PLAYER)
     for obj in pool:
         if obj.kind in ("intercept", "tracer", "shell") and not include_intercept:
             continue
-        if own_only and obj.faction != FACTION_PLAYER:
+        if getattr(obj, "stowed", False):
             continue
-        d = _dist2((obj.x, obj.y), (wx, wy))
-        if d <= best_d:
-            best_d = d
-            best = obj
-    return best
+        osx, osy = camera.world_to_screen(obj.x, obj.y, screen_w, screen_h)
+        d = (osx - sx) * (osx - sx) + (osy - sy) * (osy - sy)
+        if obj.faction == FACTION_PLAYER:
+            if d <= best_own_d:
+                best_own_d = d
+                best_own = obj
+            continue
+        if own_only:
+            continue
+        if d <= best_other_d:
+            best_other_d = d
+            best_other = obj
+    if prefer_own and best_own is not None:
+        return best_own
+    if own_only:
+        return best_own
+    if best_own is not None and (
+        best_other is None or best_own_d <= best_other_d
+    ):
+        return best_own
+    return best_other if best_other is not None else best_own

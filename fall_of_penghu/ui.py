@@ -14,6 +14,7 @@ from fall_of_penghu.world.entities import (
     FACTION_PLAYER,
     GameObject,
     SetDoctrine,
+    WreckObject,
 )
 from fall_of_penghu.debug_palette import DebugPalette
 from fall_of_penghu.engage_palette import EngagePalette
@@ -39,6 +40,7 @@ PORT_HINT = {
     "recall": "Click a ferry",
     "load": "Click a unit",
     "unload": "Click destination",
+    "destroy": "Destroy this bridge",
 }
 
 
@@ -162,6 +164,18 @@ class Hud:
             return None
         return obj
 
+    @staticmethod
+    def _selected_bridge(
+        selection: Selection | None, entities: Entities | None
+    ) -> GameObject | None:
+        if selection is None or entities is None or len(selection.selected) != 1:
+            return None
+        oid = next(iter(selection.selected))
+        obj = entities.get(oid)
+        if obj is None or obj.kind != "bridge" or not obj.active:
+            return None
+        return obj
+
     def _layout_port_menu(
         self,
         selection: Selection | None,
@@ -175,7 +189,12 @@ class Hud:
             return
         port = self._selected_port(selection, entities)
         ferry = None if port is not None else self._selected_ferry(selection, entities)
-        obj = port if port is not None else ferry
+        bridge = (
+            None
+            if port is not None or ferry is not None
+            else self._selected_bridge(selection, entities)
+        )
+        obj = port if port is not None else ferry if ferry is not None else bridge
         if obj is None:
             return
         sx, sy = camera.world_to_screen(obj.x, obj.y, screen_w, screen_h)
@@ -189,11 +208,13 @@ class Hud:
             y = max(PANEL_H + 8, screen_h - 8 - PORT_BTN_H * 2 - 4)
         if port is not None:
             cmds = ("launch", "recall")
-        else:
+        elif ferry is not None:
             cmds = ("load", "unload")
+        else:
+            cmds = ("destroy",)
         self._port_buttons = [
-            (pygame.Rect(x, y, PORT_BTN_W, PORT_BTN_H), cmds[0]),
-            (pygame.Rect(x, y + PORT_BTN_H + 4, PORT_BTN_W, PORT_BTN_H), cmds[1]),
+            (pygame.Rect(x, y + i * (PORT_BTN_H + 4), PORT_BTN_W, PORT_BTN_H), cmd)
+            for i, cmd in enumerate(cmds)
         ]
 
     @staticmethod
@@ -247,12 +268,22 @@ class Hud:
         if selection is not None:
             port = self._selected_port(selection, entities)
             ferry = self._selected_ferry(selection, entities)
+            bridge = self._selected_bridge(selection, entities)
             owner = port if port is not None else ferry
             stock = int(getattr(port, "ferries", 0) or 0) if port is not None else 0
             cargo_on = bool(getattr(ferry, "cargo_id", None)) if ferry is not None else False
             for rect, cmd in self._port_buttons:
                 if not rect.collidepoint(event.pos):
                     continue
+                if cmd == "destroy":
+                    if bridge is None or entities is None:
+                        return True
+                    entities.dispatch(
+                        WreckObject(object_id=bridge.id),
+                        as_faction=FACTION_PLAYER,
+                    )
+                    selection.clear()
+                    return True
                 if owner is None:
                     return True
                 if cmd == "launch" and stock <= 0:
@@ -305,6 +336,8 @@ class Hud:
         palette: DebugPalette | None = None,
         engage: EngagePalette | None = None,
         vision: VisionPalette | None = None,
+        heat_probe: tuple[float, float, float] | None = None,
+        defeated: bool = False,
     ) -> None:
         debug = camera.debug_mode
         self._layout(debug)
@@ -403,6 +436,18 @@ class Hud:
 
         renderer.overlay(bar, (0, 0))
 
+        if defeated:
+            banner = self.font.render("DEFEAT — no player units remain on the islands", True, ink)
+            box = pygame.Surface(
+                (banner.get_width() + 24, banner.get_height() + 16), pygame.SRCALPHA
+            )
+            box.fill((8, 10, 12, 210))
+            box.blit(banner, (12, 8))
+            renderer.overlay(
+                box,
+                ((screen_w - box.get_width()) // 2, PANEL_H + 16),
+            )
+
         if hover is not None:
             tip = hover.name
             doctrine = getattr(hover, "doctrine", None)
@@ -469,9 +514,16 @@ class Hud:
                 f"draw c{stats['coast']} v{stats['vegetation']} "
                 f"b{stats['buildings']} r{stats['roads']}"
             )
+            if heat_probe is not None:
+                hud += (
+                    f"   heat T{heat_probe[0]:.2f} "
+                    f"L{heat_probe[1]:.2f} AA{heat_probe[2]:.2f}"
+                )
             hint = (
-                "WASD pan  LMB select  Shift box  RMB move  Q/E zoom  "
-                "Shift+Del delete  F12 debug  red=C snapshot  yellow=C imprint  Esc quit"
+                "WASD pan  LMB select  Shift box  RMB move  "
+                "Shift+RMB sea/air waypoints  Q/E zoom  "
+                "Shift+Del delete  F12 debug  red=C snapshot  yellow=C imprint  "
+                "heat R/G/B=threat/land/AA  Esc quit"
             )
             footer = pygame.Surface((screen_w, DEBUG_H), pygame.SRCALPHA)
             footer.fill((8, 10, 12, 170))
@@ -537,6 +589,7 @@ class Hud:
             "recall": "Recall",
             "load": "Load",
             "unload": "Unload",
+            "destroy": "Destroy",
         }
         for rect, cmd in self._port_buttons:
             armed = selection is not None and selection.port_cmd == cmd

@@ -6,14 +6,19 @@ from pathlib import Path
 from shapely.geometry import Point, Polygon
 from shapely.ops import unary_union
 
-from fall_of_penghu.world.entities.game_object import GameObject
-from fall_of_penghu.world.entities.land.geom import point_in_poly
+from fall_of_penghu.world.entities.game_object import (
+    FACTION_CHINA,
+    FACTION_PLAYER,
+    GameObject,
+)
+from fall_of_penghu.world.entities.kinds import is_static_kind
 from fall_of_penghu.world.entities.land.islands import IslandIndex
 from fall_of_penghu.world.map import MapData
 
 CACHE_NAME = "lookouts.json"
 CACHE_FORMAT = "fall-of-penghu-lookouts"
 SHORE_OCCUPY_M = 50.0
+SKIP_PRESENCE = frozenset({"intercept", "tracer", "shell"})
 
 
 def _centroid(points: list[tuple[float, float]]) -> tuple[float, float]:
@@ -72,6 +77,14 @@ class IslandLookouts:
         for iid in self._inhabited:
             self._geom(iid)
 
+    @property
+    def inhabited(self) -> frozenset[int]:
+        return self._inhabited
+
+    @property
+    def islands(self) -> IslandIndex | None:
+        return self._islands
+
     def occupied_by(
         self, units: list[GameObject], *, ground_kinds: frozenset[str]
     ) -> set[int]:
@@ -88,9 +101,19 @@ class IslandLookouts:
                 extra.add(iid)
         return extra
 
-    def distance_m(self, x: float, y: float, extra_islands: set[int] | None = None) -> float:
+    def distance_m(
+        self,
+        x: float,
+        y: float,
+        extra_islands: set[int] | None = None,
+        *,
+        base: frozenset[int] | set[int] | None = None,
+        deny: set[int] | None = None,
+    ) -> float:
         """0 on a providing island, otherwise meters to its simplified shore."""
-        ids = set(self._inhabited)
+        ids = set(self._inhabited if base is None else base)
+        if deny:
+            ids -= deny
         if extra_islands:
             ids.update(extra_islands)
         if not ids:
@@ -212,3 +235,52 @@ class IslandLookouts:
                     found.add(i)
                     break
         return found
+
+
+def island_under(islands: IslandIndex | None, obj: GameObject) -> int | None:
+    if islands is None:
+        return None
+    if not obj.active or getattr(obj, "stowed", False):
+        return None
+    if obj.kind in SKIP_PRESENCE or is_static_kind(obj.kind):
+        return None
+    return islands.at(obj.x, obj.y)
+
+
+def occupants(
+    islands: IslandIndex | None, units: list[GameObject]
+) -> dict[int, dict[str, int]]:
+    out: dict[int, dict[str, int]] = {}
+    if islands is None:
+        return out
+    for obj in units:
+        iid = island_under(islands, obj)
+        if iid is None:
+            continue
+        row = out.setdefault(iid, {})
+        row[obj.faction] = row.get(obj.faction, 0) + 1
+    return out
+
+
+def china_held(
+    inhabited: frozenset[int], occ: dict[int, dict[str, int]]
+) -> set[int]:
+    held: set[int] = set()
+    for iid in inhabited:
+        row = occ.get(iid) or {}
+        if row.get(FACTION_CHINA, 0) > 0 and row.get(FACTION_PLAYER, 0) <= 0:
+            held.add(iid)
+    return held
+
+
+def faction_on_islands(
+    islands: IslandIndex | None, units: list[GameObject], faction: str
+) -> bool:
+    if islands is None:
+        return False
+    for obj in units:
+        if obj.faction != faction:
+            continue
+        if island_under(islands, obj) is not None:
+            return True
+    return False

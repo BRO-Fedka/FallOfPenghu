@@ -54,6 +54,21 @@ class DetectionCatalog:
             merged.update({str(k): float(v) for k, v in row.items()})
             self._emitter_exceptions[str(channel)] = merged
         self._threat = data.get("threat") or {}
+        heat = data.get("heatmap") or {}
+        self.heat_cell_m = float(heat.get("cell_m") or 500.0)
+        self.heat_half_life_sim_s = float(heat.get("half_life_sim_s") or 180.0)
+        self.landing_hot_threshold = float(heat.get("landing_hot_threshold") or 6.0)
+        self.landing_cold_weight = float(heat.get("landing_cold_weight") or 0.65)
+        self.landing_far_weight = float(heat.get("landing_far_weight") or 0.35)
+        self.radar_aa_factor = float(heat.get("radar_aa_factor") or 0.35)
+        self.scout_standoff_m = float(heat.get("scout_standoff_m") or 400.0)
+        self.scout_reassign_sim_s = float(heat.get("scout_reassign_sim_s") or 180.0)
+        self.scout_count = max(1, int(heat.get("scout_count") or 10))
+        self.scout_patrol_count = max(0, int(heat.get("scout_patrol_count") or 2))
+        self.scout_dusk_tod = float(heat.get("scout_dusk_tod") or (17.0 / 24.0))
+        self.drone_lost_sim_s = float(heat.get("drone_lost_sim_s") or 90.0)
+        self._heat_splat = heat.get("splat") or {}
+        self._landing_weight = heat.get("landing_weight") or {}
         lookout = data.get("lookout") or {}
         self.lookout_simplify_m = float(lookout.get("simplify_m") or 20.0)
         sat = data.get("satellite_windows") or {}
@@ -276,6 +291,18 @@ class DetectionCatalog:
             return 0.0
         t = min(1.0, max(0.0, float(dist_m) / reach))
         return max(0.0, self.hit_p0(kind) * (1.0 - t * t))
+
+    def splat(self, kind: str) -> tuple[float, float]:
+        row = self._heat_splat.get(kind) or self._heat_splat.get("default") or {}
+        weight = float(row.get("weight") if row.get("weight") is not None else 1.0)
+        sigma = float(row.get("sigma_m") if row.get("sigma_m") is not None else 400.0)
+        return weight, sigma
+
+    def landing_weight(self, kind: str) -> float:
+        row = self._landing_weight
+        if kind in row:
+            return float(row[kind])
+        return float(row.get("default") or 1.0)
 
     def threat(self, shooter_kind: str, target_kind: str) -> float:
         if is_static_kind(target_kind):

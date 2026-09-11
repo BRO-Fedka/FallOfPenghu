@@ -17,7 +17,9 @@ from fall_of_penghu.world.entities.command import (
     SetEngageFilter,
     SetFocus,
     SetRoute,
+    WreckObject,
 )
+from fall_of_penghu.world.combat.health import wreck
 from fall_of_penghu.world.entities.dynamic import DynamicObject
 from fall_of_penghu.world.entities.game_object import (
     FACTION_CHINA,
@@ -268,6 +270,14 @@ class ObjectManager:
 
     def dispatch(self, cmd: Command, *, as_faction: str) -> None:
         """Apply a command only if the object belongs to `as_faction`."""
+        if isinstance(cmd, WreckObject):
+            obj = self._by_id.get(cmd.object_id)
+            if obj is None or obj.kind != "bridge" or not obj.active:
+                return
+            if as_faction != FACTION_PLAYER:
+                return
+            wreck(obj)
+            return
         obj = self._by_id.get(cmd.object_id)
         if not isinstance(obj, DynamicObject) or obj.faction != as_faction:
             return

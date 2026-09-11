@@ -353,6 +353,42 @@
       "truck": 2.0
     }
   },
+  "heatmap": {
+    "cell_m": 500.0,
+    "half_life_sim_s": 180.0,
+    "landing_hot_threshold": 6.0,
+    "landing_cold_weight": 0.65,
+    "landing_far_weight": 0.35,
+    "radar_aa_factor": 0.35,
+    "scout_standoff_m": 400.0,
+    "scout_reassign_sim_s": 180.0,
+    "scout_count": 10,
+    "scout_patrol_count": 2,
+    "scout_dusk_tod": 0.7083,
+    "drone_lost_sim_s": 90.0,
+    "splat": {
+      "default": { "weight": 1.0, "sigma_m": 400.0 },
+      "tank": { "weight": 3.2, "sigma_m": 700.0 },
+      "artillery": { "weight": 3.6, "sigma_m": 800.0 },
+      "aaw": { "weight": 4.0, "sigma_m": 900.0 },
+      "aa_pickup": { "weight": 3.0, "sigma_m": 600.0 },
+      "infantry": { "weight": 1.8, "sigma_m": 350.0 },
+      "truck": { "weight": 0.8, "sigma_m": 400.0 },
+      "scout": { "weight": 0.4, "sigma_m": 300.0 },
+      "drone": { "weight": 0.25, "sigma_m": 250.0 }
+    },
+    "landing_weight": {
+      "default": 1.0,
+      "tank": 4.5,
+      "artillery": 5.0,
+      "aaw": 3.2,
+      "aa_pickup": 3.8,
+      "infantry": 3.5,
+      "truck": 0.6,
+      "scout": 0.2,
+      "drone": 0.1
+    }
+  },
   "lookout": {
     "simplify_m": 20.0
   },
