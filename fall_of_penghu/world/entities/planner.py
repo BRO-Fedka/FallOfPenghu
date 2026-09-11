@@ -23,7 +23,7 @@ LAND_SAMPLE_M = 16.0
 LAND_DIRECT_M = 80.0
 LAND_OFFROAD_COST = 3.2
 SEA_CELL_M = 150.0
-SEA_SAMPLE_M = 80.0
+SEA_SAMPLE_M = 25.0
 SEA_PAD_M = 8_000.0
 SEA_MIN_SPAN_M = 70_000.0
 
@@ -67,6 +67,8 @@ class Planner:
         self._sea_w = 0
         self._sea_h = 0
         self._sea_block: list[bool] = []
+        self._sea_coast: set[int] = set()
+        self._sea_pass: dict[int, int] = {}
         self._land_walk: list[bool] = []
         self._road_cells: set[int] = set()
         self.land = LandRouter(world)
@@ -434,12 +436,15 @@ class Planner:
         return Route(pts) if len(pts) >= 2 else None
 
     def _build_sea(self) -> None:
-        bbox = self._map.manifest.get("bbox_penghu") or [-22000, -32000, 21000, 35000]
+        # The whole map border is a spawn and reload zone, so every corner of the
+        # frame has to be navigable. A grid that only padded the islands left
+        # ships from the north and south edges with no route at all.
         frame_min = self._map.manifest.get("frame_min_xy") or [-100000.0, -100000.0]
-        minx = min(float(bbox[0]) - SEA_PAD_M, float(frame_min[0]) + SEA_CELL_M)
-        miny = float(bbox[1]) - SEA_PAD_M
-        maxx = float(bbox[2]) + SEA_PAD_M
-        maxy = float(bbox[3]) + SEA_PAD_M
+        frame_max = self._map.manifest.get("frame_max_xy") or [100000.0, 100000.0]
+        minx = float(frame_min[0]) + SEA_CELL_M
+        miny = float(frame_min[1]) + SEA_CELL_M
+        maxx = float(frame_max[0]) - SEA_CELL_M
+        maxy = float(frame_max[1]) - SEA_CELL_M
         minx, maxx = _span_axis(minx, maxx, SEA_MIN_SPAN_M)
         miny, maxy = _span_axis(miny, maxy, SEA_MIN_SPAN_M)
         cell = SEA_CELL_M
@@ -463,6 +468,8 @@ class Planner:
         self._sea_w = w
         self._sea_h = h
         self._sea_block = block
+        self._sea_coast = _coast_cells(block, w, h)
+        self._sea_pass = {}
 
     def _sea_index(self, x: float, y: float) -> int | None:
         gx = int((x - self._sea_origin[0]) / SEA_CELL_M)
@@ -579,6 +586,40 @@ class Planner:
                     heappush(heap, (nxt + hypot(hx - gx, hy - gy), v))
         return None
 
+    def _sea_step_ok(self, u: int, v: int) -> bool:
+        """Fine check near shores: a strip thinner than a cell still blocks.
+
+        Sampling on every expansion cost a third of a second on long coastal
+        legs, so each coast cell keeps a bitmask of the eight steps it may take,
+        baked when the grid is built.
+        """
+        w = self._sea_w
+        dx = (v % w) - (u % w)
+        dy = (v // w) - (u // w)
+        bit = (dy + 1) * 3 + (dx + 1)
+        return bool(self._sea_step_mask(u) & (1 << bit))
+
+    def _sea_step_mask(self, u: int) -> int:
+        mask = self._sea_pass.get(u)
+        if mask is not None:
+            return mask
+        mask = 0
+        w = self._sea_w
+        here = self._sea_xy(u)
+        ux, uy = u % w, u // w
+        for oy in (-1, 0, 1):
+            for ox in (-1, 0, 1):
+                if not ox and not oy:
+                    continue
+                nx, ny = ux + ox, uy + oy
+                if nx < 0 or ny < 0 or nx >= w or ny >= self._sea_h:
+                    continue
+                if self._seg_hits_land(here, self._sea_xy(ny * w + nx)):
+                    continue
+                mask |= 1 << ((oy + 1) * 3 + (ox + 1))
+        self._sea_pass[u] = mask
+        return mask
+
     def _astar_sea(self, start: int, goal: int) -> list[int] | None:
         w, h = self._sea_w, self._sea_h
         gx, gy = goal % w, goal // w
@@ -586,6 +627,7 @@ class Planner:
         cost = {start: 0.0}
         prev: dict[int, int] = {}
         block = self._sea_block
+        coast = self._sea_coast
         steps = 0
         while heap:
             steps = tick("planner.astar_sea", steps, SEA_ASTAR_MAX_ITERS)
@@ -593,6 +635,7 @@ class Planner:
             if u == goal:
                 return unwind(prev, u, "planner.astar_sea")
             ux, uy = u % w, u // w
+            near_land = u in coast
             for dx, dy, step in (
                 (-1, 0, 1.0),
                 (1, 0, 1.0),
@@ -608,6 +651,8 @@ class Planner:
                     continue
                 v = vy * w + vx
                 if block[v]:
+                    continue
+                if (near_land or v in coast) and not self._sea_step_ok(u, v):
                     continue
                 nxt = cost[u] + step
                 if nxt < cost.get(v, 1e30):
@@ -658,6 +703,24 @@ class Planner:
                     prev[v] = u
                     heappush(heap, (nxt + hypot(vx - gx, vy - gy) * terrain, v))
         return None
+
+
+def _coast_cells(block: list[bool], w: int, h: int) -> set[int]:
+    """Water cells touching land. Only there is a fine land check worth its cost."""
+    out: set[int] = set()
+    for i, blocked in enumerate(block):
+        if not blocked:
+            continue
+        cx, cy = i % w, i // w
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                vx, vy = cx + dx, cy + dy
+                if vx < 0 or vy < 0 or vx >= w or vy >= h:
+                    continue
+                v = vy * w + vx
+                if not block[v]:
+                    out.add(v)
+    return out
 
 
 def _span_axis(lo: float, hi: float, minimum: float) -> tuple[float, float]:

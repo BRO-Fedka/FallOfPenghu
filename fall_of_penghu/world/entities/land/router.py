@@ -23,6 +23,8 @@ DIRECT_M = 80.0
 PORTAL_SNAP_M = 180.0
 ROAD_SNAP_M = 350.0
 ROAD_ON_M = 18.0
+WATER_SAMPLE_M = 20.0
+OFFROAD_TIME = 1.45
 
 
 class LandRouter:
@@ -72,6 +74,8 @@ class LandRouter:
         graph = self._roads.get(int(spot[1]))
         if graph is None or not graph.nodes:
             return False
+        if graph.near_edge(x, y, ROAD_ON_M) is not None:
+            return True
         return graph.nearest(x, y, max_m=ROAD_ON_M) is not None
 
     def locate(self, x: float, y: float) -> tuple[str, int | str] | None:
@@ -319,19 +323,32 @@ class LandRouter:
         start: tuple[float, float],
         goal: tuple[float, float],
     ) -> list[tuple[float, float]] | None:
+        """Road or field, whichever is quicker.
+
+        Roads are faster per metre, so the router used to take any road it could
+        reach: a hundred metre move across a field turned into a kilometre loop.
+        Both routes are built and compared in travel time.
+        """
         if hypot(goal[0] - start[0], goal[1] - start[1]) <= DIRECT_M:
             short = self._safe_direct(island, start, goal)
             if short is not None:
                 return short
+        field = self._offroad(island, start, goal)
         graph = self._roads.get(island)
-        if graph is not None and graph.nodes:
-            sa = graph.nearest(*start, max_m=ROAD_SNAP_M)
-            sb = graph.nearest(*goal, max_m=ROAD_SNAP_M)
-            if sa is not None and sb is not None:
-                via = self._via_roads(island, start, goal, graph, sa, sb)
-                if via is not None:
-                    return via
-        return self._offroad(island, start, goal)
+        if graph is None or not graph.nodes:
+            return field
+        sa = graph.nearest(*start, max_m=ROAD_SNAP_M)
+        sb = graph.nearest(*goal, max_m=ROAD_SNAP_M)
+        if sa is None or sb is None:
+            return field
+        via = self._via_roads(island, start, goal, graph, sa, sb)
+        if via is None:
+            return field
+        if field is None:
+            return via
+        if _arclen(field) * OFFROAD_TIME < _arclen(via):
+            return field
+        return via
 
     def _via_roads(
         self,
@@ -373,9 +390,30 @@ class LandRouter:
         a: tuple[float, float],
         b: tuple[float, float],
     ) -> list[tuple[float, float]] | None:
-        if self._islands.at(*a) == island and self._islands.at(*b) == island:
-            return [a, b]
-        return None
+        """Straight hop, but only if the whole line stays ashore.
+
+        Checking the two ends alone let short links cut across bays and inlets.
+        """
+        if self._islands.at(*a) != island or self._islands.at(*b) != island:
+            return None
+        if self._crosses_water(island, a, b):
+            return None
+        return [a, b]
+
+    def _crosses_water(
+        self, island: int, a: tuple[float, float], b: tuple[float, float]
+    ) -> bool:
+        dx = b[0] - a[0]
+        dy = b[1] - a[1]
+        length = hypot(dx, dy)
+        steps = max(2, int(length / WATER_SAMPLE_M))
+        for i in range(1, steps):
+            t = i / steps
+            x = a[0] + dx * t
+            y = a[1] + dy * t
+            if self._islands.at(x, y) is None:
+                return True
+        return False
 
     def _link(
         self,
