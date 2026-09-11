@@ -3,6 +3,7 @@ from __future__ import annotations
 from math import atan2, cos, hypot, pi, sin, sqrt
 from typing import TYPE_CHECKING
 
+from fall_of_penghu.ai.coverage import ForestCoverage
 from fall_of_penghu.ai.heatmap import BeachPick, IslandHeatmaps
 from fall_of_penghu.world.entities.command import SetRoute
 from fall_of_penghu.world.entities.dynamic import DynamicObject
@@ -24,7 +25,14 @@ AA_HEAT = 0.35
 KILL_ZONE_S = 900.0
 SEG_SAMPLE_M = 180.0
 MAX_SWEEP_VERTS = 80
+SWEEP_LEGS = 24
+CREEP_STEPS_M = (3_000.0, 6_000.0, 10_000.0)
+CREEP_GAIN_M = 300.0
 AA_CLEAR_M = 80.0
+REPLAN_S = 15.0
+MAX_STAGE_HOPS = 8
+STAGE_M = 6_000.0
+THEATRE_M = 18_000.0
 GROUND_FOLLOW = frozenset({"infantry", "artillery", "tank", "truck"})
 GROUND_AA = frozenset({"aaw", "aa_pickup"})
 Ring = tuple[float, float, float]
@@ -36,11 +44,13 @@ class IntelOps:
     def __init__(self, log: DecisionLog) -> None:
         self.log = log
         self.heat = IslandHeatmaps()
+        self.forest = ForestCoverage()
         self.assault: BeachPick | None = None
         self._scout_n = 0
         self._scout_ready_sim = 0.0
         self._baked = False
         self._sweeps: list[tuple[int, tuple[tuple[float, float], ...]]] = []
+        self._flat: tuple[tuple[float, float], ...] = ()
         self._circuit: tuple[tuple[float, float], ...] = ()
         self._progress: dict[int, int] = {}
         self._alive: set[str] = set()
@@ -48,19 +58,25 @@ class IntelOps:
         self._orphans: list[dict] = []
         self._kills: list[tuple[float, float, float, float]] = []
         self._pose: dict[str, tuple[float, float]] = {}
+        self._now = 0.0
+        self._block_sim = -1e9
 
     def bake(self, world: World) -> None:
         self.heat.bake(world)
-        self._sweeps = _forest_sweeps(world, self.heat)
+        self.forest.bake(world, self.heat)
+        self._sweeps = self.forest.snakes()
+        self._flat = tuple(pt for _iid, path in self._sweeps for pt in path)
         self._circuit = tuple(path[0] for _iid, path in self._sweeps if path)
         if len(self._circuit) == 1:
             self._circuit = self._circuit + self._circuit
         self._baked = True
 
     def step(self, world: World) -> None:
+        self._now = world.clock.simulation_time
         if not self._baked or not self._sweeps:
             self.bake(world)
         self.heat.refresh(world)
+        self.forest.mark(world)
         prev = None if self.assault is None else self.assault.island
         self.assault = self.heat.pick_landing(world)
         if self.assault is None:
@@ -89,17 +105,19 @@ class IntelOps:
         self._note_deaths(world, scouts, now, catalog)
         scouts = self._cull_scouts(world, cap)
         rings = _aa_rings(world, self._kills, now)
+        self._air_debt(rings)
         claimed = _follow_claimed(scouts)
         posts = _cluster_posts(world, catalog, rings, self, claimed) if dusk else []
         used_posts: set[int] = set()
         patrol, search = _split_roles(scouts, n_patrol)
         _bind_slots(patrol, n_patrol)
         _bind_slots(search, max(1, n_search))
+        loop = _reachable_loop(self._sweeps, rings, self) or self._circuit
         self._hand_off(world, search, claimed, now, rings)
         for scout in patrol:
-            self._drive_circuit(world, scout, now, rings)
+            self._drive_circuit(world, scout, now, rings, loop, n_patrol)
         for scout in search:
-            slot = int(getattr(scout, "patrol_slot", 0) or 0)
+            slot = max(0, _slot_of(scout))
             self._drive_search(
                 world, scout, now, dusk, slot, n_search, posts, used_posts, claimed, rings
             )
@@ -123,14 +141,10 @@ class IntelOps:
             if len(alive) >= cap:
                 break
             patrol_used = {
-                int(getattr(obj, "patrol_slot", -1) or -1)
-                for obj in alive
-                if getattr(obj, "role", "") == "circuit"
+                _slot_of(obj) for obj in alive if getattr(obj, "role", "") == "circuit"
             } | blocked_p
             search_used = {
-                int(getattr(obj, "patrol_slot", -1) or -1)
-                for obj in alive
-                if getattr(obj, "role", "") != "circuit"
+                _slot_of(obj) for obj in alive if getattr(obj, "role", "") != "circuit"
             }
             miss_p = [i for i in range(n_patrol) if i not in patrol_used]
             miss_s = [i for i in range(n_search) if i not in search_used]
@@ -236,39 +250,96 @@ class IntelOps:
     def _search_path(
         self, search_slot: int, n_search: int, sweep_k: int
     ) -> tuple[tuple[float, float], ...]:
-        if not self._sweeps or n_search <= 0:
+        """Launch destination only: a slice of the whole archipelago snake."""
+        flat = self._flat
+        if not flat or n_search <= 0:
             return ()
-        mine = [
-            path
-            for i, (_iid, path) in enumerate(self._sweeps)
-            if i % n_search == search_slot % n_search
-        ]
-        if not mine:
-            mine = [path for _iid, path in self._sweeps]
-        if not mine:
-            return ()
-        return mine[sweep_k % len(mine)]
+        n = max(1, n_search)
+        slot = search_slot % n
+        lo = len(flat) * slot // n
+        hi = len(flat) * (slot + 1) // n
+        chunk = flat[lo:hi] or flat
+        if sweep_k % 2:
+            chunk = tuple(reversed(chunk))
+        return chunk
 
-    def _skip_hot_islands(
+    def _sweep_plans(
         self,
-        search_slot: int,
+        scout: DynamicObject,
+        slot: int,
+        n_search: int,
+        rings: list[Ring],
+        sweep_k: int,
+        limit: int = 3,
+    ) -> list[tuple[tuple[float, float], ...]]:
+        """Slot's island first, then nearer fallbacks it can actually reach."""
+        cands = self._sweep_cands(scout, rings)
+        if not cands:
+            return []
+        pick = slot % max(1, n_search)
+        out: list[tuple[tuple[float, float], ...]] = []
+        for j in range(min(limit, len(cands))):
+            lanes = cands[(pick + j) % len(cands)][1]
+            out.append(self._share(scout, lanes, slot, n_search, sweep_k))
+        return out
+
+    def _sweep_cands(
+        self, scout: DynamicObject, rings: list[Ring]
+    ) -> list[tuple[tuple[int, int, int], tuple[tuple[float, float], ...]]]:
+        """Finish the nearest island before moving on.
+
+        Sweeping the whole archipelago as one list made drones commit to 40 km
+        transits and abandon half-searched forests. Islands are taken nearest
+        first; drones split one island by slot so their lanes never overlap.
+        """
+        now = self._now
+        cands: list[tuple[tuple[int, int, int], tuple[tuple[float, float], ...]]] = []
+        for iid, lanes in self.forest.lanes.items():
+            todo = tuple(pt for pt in lanes if self.forest.is_pending(pt, now))
+            if not todo:
+                continue
+            open_lanes = tuple(
+                pt for pt in todo if not _aa_known(pt[0], pt[1], rings)
+            )
+            if not open_lanes:
+                continue
+            near = min(hypot(pt[0] - scout.x, pt[1] - scout.y) for pt in open_lanes)
+            cands.append(((int(near / 4_000.0), -len(open_lanes), iid), open_lanes))
+        cands.sort(key=lambda row: row[0])
+        return cands
+
+    def _share(
+        self,
+        scout: DynamicObject,
+        lanes: tuple[tuple[float, float], ...],
+        slot: int,
         n_search: int,
         sweep_k: int,
-        path: tuple[tuple[float, float], ...],
-        rings: list[Ring],
     ) -> tuple[tuple[float, float], ...]:
-        k = sweep_k
-        cur = path
-        for _ in range(max(1, len(self._sweeps))):
-            land = tuple(pt for pt in cur if not _aa_hot(pt[0], pt[1], rings, self))
-            if land:
-                if k != sweep_k:
-                    self._progress[search_slot] = k
-                return land
-            k += 1
-            cur = self._search_path(search_slot, n_search, k)
-        self._progress[search_slot] = k
-        return ()
+        n = max(1, n_search)
+        pick = slot % n
+        if len(lanes) < 2 * n:
+            share = lanes
+        else:
+            lo = len(lanes) * pick // n
+            hi = len(lanes) * (pick + 1) // n
+            share = lanes[lo:hi] or lanes
+        if sweep_k % 2:
+            share = tuple(reversed(share))
+        return _from_nearest(scout, share)[:SWEEP_LEGS]
+
+    def _air_debt(self, rings: list[Ring]) -> None:
+        """Hand lanes under a known AA umbrella to the ground sweep."""
+        now = self._now
+        if now - self._block_sim < 5.0:
+            return
+        self._block_sim = now
+        for iid, lanes in self.forest.lanes.items():
+            blocked = self.forest.air_blocked.get(iid)
+            if blocked is None:
+                continue
+            for i, pt in enumerate(lanes):
+                blocked[i] = _aa_known(pt[0], pt[1], rings)
 
     def _cull_scouts(self, world: World, cap: int) -> list[DynamicObject]:
         scouts = _china_kind(world, "scout")
@@ -296,31 +367,50 @@ class IntelOps:
         return keep
 
     def _drive_circuit(
-        self, world: World, scout: DynamicObject, now: float, rings: list[Ring]
+        self,
+        world: World,
+        scout: DynamicObject,
+        now: float,
+        rings: list[Ring],
+        loop: tuple[tuple[float, float], ...],
+        n_patrol: int,
     ) -> None:
-        loop = self._circuit
-        if not loop:
-            return
         scout.task = "circuit"
         scout.role = "circuit"
         scout.strike_id = None
         remaining = scout.route.remaining_length() if scout.route is not None else 0.0
-        loop = _reachable_loop(self._sweeps, rings, self) or loop
-        if remaining > SWEEP_DONE_M and not _route_hits_aa(scout, rings, self):
+        if _holding(scout, now, remaining, rings, self):
             return
-        verts = _safe_verts(world, scout, _loop_from(scout, loop), rings, self)
-        if not verts:
-            goal = _nearest_reachable(scout, loop, rings, self)
-            if goal is not None:
-                hop = _clear_hop((scout.x, scout.y), goal, rings, self)
-                if hop:
-                    _fly_verts(world, scout, hop)
-            return
-        _fly_verts(world, scout, verts)
+        slot = max(0, _slot_of(scout))
+        verts = ()
+        if loop:
+            spun = _loop_from(scout, _spin(loop, slot, max(1, n_patrol)))
+            verts = _safe_verts(world, scout, spun, rings, self)
+        scout.plan_sim = now
+        if verts:
+            _fly_verts(world, scout, verts)
+        else:
+            _go_toward(world, scout, self._loiter(world, slot, rings), rings, self)
         last = float(getattr(scout, "task_sim", 0.0) or 0.0)
         if now - last >= 30.0:
             scout.task_sim = now
             self.log.emit(now, "scout-circuit", f"{scout.id} loop {len(verts)} pts")
+
+    def _loiter(
+        self, world: World, slot: int, rings: list[Ring]
+    ) -> tuple[float, float]:
+        """Per-slot holding point outside AA. Keeps idle scouts from stacking."""
+        if self.assault is not None:
+            anchor = (self.assault.x, self.assault.y)
+        elif self._circuit:
+            anchor = self._circuit[len(self._circuit) // 2]
+        else:
+            anchor = (0.0, 0.0)
+        reach = (world.catalog.engagement_m("aaw") or 6000.0) + AA_PAD_M
+        n = max(1, world.catalog.scout_count)
+        ang = (slot % n) * (2.0 * pi / n)
+        cand = (anchor[0] + cos(ang) * reach, anchor[1] + sin(ang) * reach)
+        return _push_out(cand, rings, self)
 
     def _drive_search(
         self,
@@ -390,34 +480,35 @@ class IntelOps:
                 return
         remaining = scout.route.remaining_length() if scout.route is not None else 0.0
         if (
-            remaining > SWEEP_DONE_M
-            and scout.task == "search"
+            scout.task == "search"
             and not lost
-            and not _route_hits_aa(scout, rings, self)
+            and _holding(scout, now, remaining, rings, self)
         ):
             return
         k = int(getattr(scout, "sweep_k", 0) or 0)
         if remaining <= SWEEP_DONE_M and scout.task == "search" and not lost:
             k += 1
+        scout.plan_sim = now
         verts: tuple[tuple[float, float], ...] = ()
-        for _try in range(max(1, len(self._sweeps))):
-            path = self._search_path(slot, n_search, k)
-            path = _reachable_cells(path, rings, self)
-            if lost:
-                path = _from_nearest(scout, path)
+        for path in self._sweep_plans(scout, slot, n_search, rings, k):
             verts = _safe_verts(world, scout, path, rings, self)
             if verts:
                 break
-            k += 1
-            lost = False
-        else:
+        if not verts:
             scout.sweep_k = k
-            raw = self._search_path(slot, n_search, k)
-            goal = _nearest_reachable(scout, raw, rings, self)
-            if goal is not None:
-                hop = _clear_hop((scout.x, scout.y), goal, rings, self)
-                if hop:
-                    _fly_verts(world, scout, hop)
+            if _bail_out(world, scout, rings, self):
+                return
+            cands = self._sweep_cands(scout, rings)
+            goal = cands[0][1][0] if cands else None
+            if goal is not None and _creep(world, scout, rings, self, goal):
+                return
+            _go_toward(
+                world,
+                scout,
+                goal if goal is not None else self._loiter(world, slot, rings),
+                rings,
+                self,
+            )
             return
         scout.sweep_k = k
         scout.patrol_slot = slot
@@ -465,28 +556,22 @@ class IntelOps:
         scout.patrol_xy = hover
         scout.patrol_slot = slot
         scout.sweep_k = k
+        scout.plan_sim = world.clock.simulation_time
         world.entities.add(scout)
         seed = path if path else ((hover,) if hover is not None else ())
-        if task == "circuit" and self._circuit:
-            seed = _reachable_loop(self._sweeps, rings, self) or self._circuit
+        if task == "circuit":
+            loop = _reachable_loop(self._sweeps, rings, self) or self._circuit
+            seed = _spin(loop, slot, max(1, world.catalog.scout_patrol_count))
         verts = _safe_verts(world, scout, seed, rings, self)
         if verts:
             _fly_verts(world, scout, verts[: MAX_SWEEP_VERTS + 4])
-            dest = verts[0]
+            dest = verts[-1]
         else:
-            goal = _nearest_reachable(scout, seed or (hover,), rings, self)
-            if goal is not None:
-                hop = _clear_hop((scout.x, scout.y), goal, rings, self)
-                if hop:
-                    _fly_verts(world, scout, hop)
-                    dest = hop[-1]
-                else:
-                    dest = goal
-                    _fly(world, scout, dest)
-            else:
-                # Stay aloft near the carrier; next step will retry a clear forest.
-                dest = (sx, sy)
-                scout.route = None
+            goal = _nearest_cold(seed, rings, self)
+            if goal is None:
+                goal = self._loiter(world, slot, rings)
+            dest = goal
+            _go_toward(world, scout, goal, rings, self)
         scout.patrol_xy = dest
         self._jobs[oid] = {
             "role": task,
@@ -749,12 +834,19 @@ def _aa_rings(world: World, kills: list[tuple[float, float, float, float]], now:
     return rings
 
 
-def _aa_hot(x: float, y: float, rings: list[Ring], intel: IntelOps) -> bool:
-    for ax, ay, r in rings:
-        if hypot(x - ax, y - ay) <= r:
-            return True
+def _aa_known(x: float, y: float, rings: list[Ring]) -> bool:
+    """Live or remembered AA envelope. Hard no-fly."""
+    return any(hypot(x - ax, y - ay) <= r for ax, ay, r in rings)
+
+
+def _aa_soft(x: float, y: float, intel: IntelOps) -> bool:
+    """Heatmap suspicion. Avoided when there is a colder option."""
     sample = intel.sample(x, y)
     return sample is not None and sample[2] >= AA_HEAT
+
+
+def _aa_hot(x: float, y: float, rings: list[Ring], intel: IntelOps) -> bool:
+    return _aa_known(x, y, rings) or _aa_soft(x, y, intel)
 
 
 def _push_out(
@@ -793,20 +885,29 @@ def _seg_hits(a: tuple[float, float], b: tuple[float, float], ring: Ring) -> boo
 
 
 def _seg_clear(
-    a: tuple[float, float], b: tuple[float, float], rings: list[Ring], intel: IntelOps
+    a: tuple[float, float],
+    b: tuple[float, float],
+    rings: list[Ring],
+    intel: IntelOps,
+    *,
+    strict: bool = True,
 ) -> bool:
-    if _aa_hot(a[0], a[1], rings, intel) or _aa_hot(b[0], b[1], rings, intel):
+    if _aa_known(a[0], a[1], rings) or _aa_known(b[0], b[1], rings):
         return False
     for ring in rings:
         if _seg_hits(a, b, ring):
             return False
+    if strict and (_aa_soft(a[0], a[1], intel) or _aa_soft(b[0], b[1], intel)):
+        return False
+    if not strict:
+        return True
     span = hypot(b[0] - a[0], b[1] - a[1])
     steps = max(1, int(span / SEG_SAMPLE_M))
     for i in range(1, steps):
         t = i / steps
         x = a[0] + (b[0] - a[0]) * t
         y = a[1] + (b[1] - a[1]) * t
-        if _aa_hot(x, y, rings, intel):
+        if _aa_soft(x, y, intel):
             return False
     return True
 
@@ -860,15 +961,27 @@ def _clear_hop(
     """Polyline from start to goal hugging AA rings from outside."""
     a0 = _push_out(start, rings, intel)
     b0 = _push_out(goal, rings, intel)
-    if _seg_clear(a0, b0, rings, intel):
-        out = []
-        if hypot(a0[0] - start[0], a0[1] - start[1]) > 20.0:
-            out.append(a0)
-        out.append(b0)
-        return tuple(out)
-    frontier = [(a0, ())]
+    for strict in (True, False):
+        hop = _hop_pass(start, a0, b0, rings, intel, strict)
+        if hop:
+            return hop
+    return ()
+
+
+def _hop_pass(
+    start: tuple[float, float],
+    a0: tuple[float, float],
+    b0: tuple[float, float],
+    rings: list[Ring],
+    intel: IntelOps,
+    strict: bool,
+) -> tuple[tuple[float, float], ...]:
+    head = [a0] if hypot(a0[0] - start[0], a0[1] - start[1]) > 20.0 else []
+    if _seg_clear(a0, b0, rings, intel, strict=strict):
+        return tuple([*head, b0])
+    frontier: list[tuple[tuple[float, float], tuple[tuple[float, float], ...]]] = [(a0, ())]
     seen: set[tuple[int, int]] = {_qkey(a0)}
-    for _depth in range(10):
+    for _depth in range(6):
         nxt: list[tuple[tuple[float, float], tuple[tuple[float, float], ...]]] = []
         for cur, trail in frontier:
             ring = _blocking_ring(cur, b0, rings)
@@ -878,25 +991,104 @@ def _clear_hop(
                     cands.extend(_tangents(cur, other))
             for via in cands:
                 via = _push_out(via, rings, intel)
-                if _aa_hot(via[0], via[1], rings, intel):
+                if _aa_known(via[0], via[1], rings):
                     continue
-                if not _seg_clear(cur, via, rings, intel):
+                if not _seg_clear(cur, via, rings, intel, strict=strict):
                     continue
                 key = _qkey(via)
                 if key in seen:
                     continue
                 seen.add(key)
                 path = trail + (via,)
-                if _seg_clear(via, b0, rings, intel):
-                    out = list(path) + [b0]
-                    if hypot(a0[0] - start[0], a0[1] - start[1]) > 20.0:
-                        out = [a0, *out]
-                    return tuple(out)
+                if _seg_clear(via, b0, rings, intel, strict=strict):
+                    return tuple([*head, *path, b0])
                 nxt.append((via, path))
         frontier = nxt
         if not frontier:
             break
     return ()
+
+
+def _stage_toward(
+    start: tuple[float, float],
+    goal: tuple[float, float],
+    rings: list[Ring],
+    intel: IntelOps,
+) -> tuple[tuple[float, float], ...]:
+    """Always progress toward goal in STAGE_M hops, sliding around AA when possible."""
+    cur = _push_out(start, rings, intel)
+    end = _push_out(goal, rings, intel)
+    out: list[tuple[float, float]] = []
+    if hypot(cur[0] - start[0], cur[1] - start[1]) > 20.0:
+        out.append(cur)
+    for _ in range(MAX_STAGE_HOPS):
+        dist = hypot(end[0] - cur[0], end[1] - cur[1])
+        if dist <= STAGE_M:
+            hop = _clear_hop(cur, end, rings, intel)
+            if not hop and _seg_clear(cur, end, rings, intel, strict=False):
+                hop = (end,)
+            for pt in hop:
+                if hypot(pt[0] - (out[-1][0] if out else cur[0]), pt[1] - (out[-1][1] if out else cur[1])) > 20.0:
+                    out.append(pt)
+            break
+        dx = end[0] - cur[0]
+        dy = end[1] - cur[1]
+        n = dist or 1.0
+        nxt = (cur[0] + dx / n * STAGE_M, cur[1] + dy / n * STAGE_M)
+        nxt = _push_out(nxt, rings, intel)
+        if _seg_clear(cur, nxt, rings, intel):
+            out.append(nxt)
+            cur = nxt
+            continue
+        hop = _clear_hop(cur, nxt, rings, intel)
+        if hop:
+            for pt in hop:
+                if hypot(pt[0] - (out[-1][0] if out else cur[0]), pt[1] - (out[-1][1] if out else cur[1])) > 20.0:
+                    out.append(pt)
+            cur = out[-1]
+            continue
+        ring = _blocking_ring(cur, nxt, rings)
+        moved = False
+        if ring is not None:
+            for via in _tangents(cur, ring):
+                via = _push_out(via, rings, intel)
+                if _aa_known(via[0], via[1], rings):
+                    continue
+                if not _seg_clear(cur, via, rings, intel, strict=False):
+                    continue
+                out.append(via)
+                cur = via
+                moved = True
+                break
+        if not moved:
+            # Nothing safe ahead: stop short rather than fly into the envelope.
+            break
+    return tuple(out)
+
+
+def _go_toward(
+    world: World,
+    scout: DynamicObject,
+    goal: tuple[float, float],
+    rings: list[Ring],
+    intel: IntelOps,
+) -> None:
+    start = (scout.x, scout.y)
+    if hypot(goal[0] - start[0], goal[1] - start[1]) <= SIT_M:
+        scout.patrol_xy = goal
+        return
+    if hypot(goal[0] - start[0], goal[1] - start[1]) > THEATRE_M:
+        verts = _stage_toward(start, goal, rings, intel)
+    else:
+        verts = _clear_hop(start, goal, rings, intel) or _stage_toward(start, goal, rings, intel)
+    if verts:
+        _fly_verts(world, scout, verts)
+        scout.patrol_xy = verts[-1]
+    elif not _aa_known(goal[0], goal[1], rings) and _seg_clear(
+        start, goal, rings, intel, strict=False
+    ):
+        _fly(world, scout, goal)
+        scout.patrol_xy = goal
 
 
 def _qkey(pt: tuple[float, float]) -> tuple[int, int]:
@@ -908,7 +1100,10 @@ def _reachable_cells(
     rings: list[Ring],
     intel: IntelOps,
 ) -> tuple[tuple[float, float], ...]:
-    return tuple(pt for pt in cells if not _aa_hot(pt[0], pt[1], rings, intel))
+    """Cells outside known AA. Fully cold ones win; suspicion alone never blocks all."""
+    outside = tuple(pt for pt in cells if not _aa_known(pt[0], pt[1], rings))
+    cold = tuple(pt for pt in outside if not _aa_soft(pt[0], pt[1], intel))
+    return cold or outside
 
 
 def _reachable_loop(
@@ -926,8 +1121,7 @@ def _reachable_loop(
     return tuple(pts)
 
 
-def _nearest_reachable(
-    scout: DynamicObject,
+def _nearest_cold(
     seed: tuple[tuple[float, float], ...] | None,
     rings: list[Ring],
     intel: IntelOps,
@@ -935,14 +1129,17 @@ def _nearest_reachable(
     if not seed:
         return None
     land = _reachable_cells(tuple(seed), rings, intel)
-    if not land:
-        return None
-    start = (scout.x, scout.y)
-    ranked = sorted(land, key=lambda pt: hypot(pt[0] - start[0], pt[1] - start[1]))
-    for pt in ranked[:12]:
-        if _clear_hop(start, pt, rings, intel):
-            return pt
-    return None
+    return land[0] if land else None
+
+
+def _spin(
+    loop: tuple[tuple[float, float], ...], slot: int, n: int
+) -> tuple[tuple[float, float], ...]:
+    """Offset the circuit per slot so patrols do not fly nose to tail."""
+    if len(loop) < 2:
+        return loop
+    step = (len(loop) * (slot % max(1, n))) // max(1, n)
+    return loop[step:] + loop[:step]
 
 
 def _safe_verts(
@@ -956,7 +1153,10 @@ def _safe_verts(
     if not land:
         return ()
     start = (scout.x, scout.y)
-    # Pick the nearest cell we can actually approach around AA.
+    # Far from theatre: only stage toward the nearest cold cell; local snake later.
+    nearest = min(land, key=lambda pt: hypot(pt[0] - start[0], pt[1] - start[1]))
+    if hypot(nearest[0] - start[0], nearest[1] - start[1]) > THEATRE_M:
+        return _stage_toward(start, nearest, rings, intel)
     entry = None
     entry_i = 0
     ranked = sorted(
@@ -970,7 +1170,7 @@ def _safe_verts(
             entry_i = i
             break
     if entry is None:
-        return ()
+        return _stage_toward(start, nearest, rings, intel)
     sweep = land[entry_i : entry_i + MAX_SWEEP_VERTS]
     if not sweep:
         return entry
@@ -980,7 +1180,6 @@ def _safe_verts(
     for nxt in sweep[1:]:
         hop = _clear_hop(cur, nxt, rings, intel)
         if not hop:
-            # Skip hot/unreachable cells; keep sweeping the reachable pocket.
             continue
         for pt in hop:
             if hypot(pt[0] - chain[-1][0], pt[1] - chain[-1][1]) > 20.0:
@@ -991,53 +1190,87 @@ def _safe_verts(
     return tuple(chain)
 
 
+def _creep(
+    world: World,
+    scout: DynamicObject,
+    rings: list[Ring],
+    intel: IntelOps,
+    goal: tuple[float, float],
+) -> bool:
+    """Edge around an AA wall: nearest legal hop that shortens the approach.
+
+    Penghu's overlapping 6 km envelopes often leave no straight lane to a forest,
+    and a drone that finds no full route used to hover for hours.
+    """
+    start = (scout.x, scout.y)
+    span = hypot(start[0] - goal[0], start[1] - goal[1])
+    best = None
+    best_d = span - CREEP_GAIN_M
+    for radius in CREEP_STEPS_M:
+        for i in range(16):
+            ang = i * pi / 8.0
+            pt = (start[0] + cos(ang) * radius, start[1] + sin(ang) * radius)
+            if _aa_known(pt[0], pt[1], rings):
+                continue
+            if not _seg_clear(start, pt, rings, intel, strict=False):
+                continue
+            d = hypot(pt[0] - goal[0], pt[1] - goal[1])
+            if d < best_d:
+                best = pt
+                best_d = d
+    if best is None:
+        return False
+    _fly(world, scout, best)
+    scout.patrol_xy = best
+    return True
+
+
+def _bail_out(
+    world: World, scout: DynamicObject, rings: list[Ring], intel: IntelOps
+) -> bool:
+    """Leave an AA envelope the shortest way. A trapped drone plans nothing."""
+    ring = None
+    worst = 0.0
+    for ax, ay, r in rings:
+        slack = r - hypot(scout.x - ax, scout.y - ay)
+        if slack > worst:
+            worst = slack
+            ring = (ax, ay, r)
+    if ring is None:
+        return False
+    ax, ay, r = ring
+    dx = scout.x - ax
+    dy = scout.y - ay
+    n = hypot(dx, dy) or 1.0
+    out = (ax + dx / n * (r + AA_PAD_M), ay + dy / n * (r + AA_PAD_M))
+    _fly(world, scout, _push_out(out, rings, intel))
+    scout.patrol_xy = out
+    return True
+
+
+def _holding(
+    scout: DynamicObject,
+    now: float,
+    remaining: float,
+    rings: list[Ring],
+    intel: IntelOps,
+) -> bool:
+    """Keep flying the current leg. Re-planning every tick resets route progress."""
+    if remaining > SWEEP_DONE_M and not _route_hits_aa(scout, rings, intel):
+        return True
+    return now - float(getattr(scout, "plan_sim", 0.0) or 0.0) < REPLAN_S
+
+
 def _route_hits_aa(scout: DynamicObject, rings: list[Ring], intel: IntelOps) -> bool:
+    """Only live danger forces a re-plan. Suspicion alone would thrash the route."""
     route = scout.route
     if route is None or len(route.points) < 2:
-        return _aa_hot(scout.x, scout.y, rings, intel)
+        return _aa_known(scout.x, scout.y, rings)
     pts = [(scout.x, scout.y), *route.points]
     for a, b in zip(pts, pts[1:]):
-        if not _seg_clear(a, b, rings, intel):
+        if not _seg_clear(a, b, rings, intel, strict=False):
             return True
     return False
-
-
-def _forest_sweeps(
-    world: World, heat: IslandHeatmaps
-) -> list[tuple[int, tuple[tuple[float, float], ...]]]:
-    cover = world.perception.cover
-    if cover is None:
-        return []
-    by_island: dict[int, list[tuple[float, float]]] = {}
-    cell = max(50.0, world.catalog.heat_cell_m)
-    for grid in heat.grids.values():
-        for i, land in enumerate(grid.land):
-            if not land:
-                continue
-            pt = grid.center(i)
-            if cover.at(pt[0], pt[1], "ground") != "forest":
-                continue
-            by_island.setdefault(grid.island, []).append(pt)
-    ordered = sorted(
-        by_island.items(),
-        key=lambda row: (sum(p[1] for p in row[1]) / len(row[1]), row[0]),
-    )
-    return [(iid, tuple(_snake(cells, cell))) for iid, cells in ordered if cells]
-
-
-def _snake(
-    cells: list[tuple[float, float]], cell_m: float
-) -> list[tuple[float, float]]:
-    rows: dict[int, list[tuple[float, float]]] = {}
-    for x, y in cells:
-        rows.setdefault(int(round(y / cell_m)), []).append((x, y))
-    path: list[tuple[float, float]] = []
-    for i, gy in enumerate(sorted(rows)):
-        row = sorted(rows[gy], key=lambda p: p[0])
-        if i % 2:
-            row.reverse()
-        path.extend(row)
-    return path
 
 
 def _from_nearest(
@@ -1068,6 +1301,8 @@ def _loop_from(
 
 
 def _fly(world: World, unit: DynamicObject, xy: tuple[float, float]) -> None:
+    if hypot(xy[0] - unit.x, xy[1] - unit.y) <= 25.0:
+        return
     world.entities.dispatch(
         SetRoute(object_id=unit.id, mode="auto", target=xy),
         as_faction=FACTION_CHINA,
@@ -1077,13 +1312,18 @@ def _fly(world: World, unit: DynamicObject, xy: tuple[float, float]) -> None:
 def _fly_verts(
     world: World, unit: DynamicObject, verts: tuple[tuple[float, float], ...]
 ) -> None:
-    if not verts:
+    live: list[tuple[float, float]] = []
+    for pt in verts:
+        prev = live[-1] if live else (unit.x, unit.y)
+        if hypot(pt[0] - prev[0], pt[1] - prev[1]) > 25.0:
+            live.append(pt)
+    if not live:
         return
-    if len(verts) == 1:
-        _fly(world, unit, verts[0])
+    if len(live) == 1:
+        _fly(world, unit, live[0])
         return
     world.entities.dispatch(
-        SetRoute(object_id=unit.id, mode="manual", vertices=verts),
+        SetRoute(object_id=unit.id, mode="manual", vertices=tuple(live)),
         as_faction=FACTION_CHINA,
     )
 
@@ -1113,22 +1353,23 @@ def _split_roles(
     return patrol, search
 
 
+def _slot_of(obj: DynamicObject) -> int:
+    raw = getattr(obj, "patrol_slot", None)
+    return -1 if raw is None else int(raw)
+
+
 def _bind_slots(units: list[DynamicObject], n: int) -> None:
     n = max(n, 1)
     taken: set[int] = set()
     pending: list[DynamicObject] = []
     for obj in sorted(units, key=lambda row: row.id):
-        raw = getattr(obj, "patrol_slot", None)
-        if raw is None:
-            pending.append(obj)
-            continue
-        slot = int(raw)
+        slot = _slot_of(obj)
         if slot < 0 or slot in taken:
             pending.append(obj)
             continue
         taken.add(slot)
     miss = [i for i in range(n) if i not in taken]
-    extra = n
+    extra = max(n, (max(taken) + 1) if taken else n)
     for obj in pending:
         if miss:
             obj.patrol_slot = miss.pop(0)
@@ -1152,11 +1393,38 @@ def _china_kind(world: World, kind: str) -> list[DynamicObject]:
 
 
 def _best_carrier(world: World) -> DynamicObject | None:
-    ships = _china_kind(world, "drone_carrier")
-    alive = [obj for obj in ships if (obj.task or "") != "leave"]
-    if not alive:
+    """Launch platform: any China hull already in the theatre beats a distant one.
+
+    Recon drones fly at 18 m/s; a carrier that has gone back to the border to
+    reload would spend their whole endurance on transit, so landing ships and
+    escorts standing off the islands launch them instead.
+    """
+    decks: list[DynamicObject] = []
+    for kind in ("drone_carrier", "landing_ship", "ship"):
+        decks.extend(
+            obj for obj in _china_kind(world, kind) if (obj.task or "") != "leave"
+        )
+    if not decks:
         return None
-    alive.sort(
-        key=lambda obj: (0 if (obj.task or "station") == "station" else 1, obj.id)
+    hub = _theatre_xy(world)
+    decks.sort(
+        key=lambda obj: (
+            int(hypot(obj.x - hub[0], obj.y - hub[1]) / 5_000.0),
+            0 if obj.kind == "drone_carrier" else 1,
+            obj.id,
+        )
     )
-    return alive[0]
+    return decks[0]
+
+
+def _theatre_xy(world: World) -> tuple[float, float]:
+    bbox = world.map.manifest.get("bbox_penghu") or [
+        -22_000.0,
+        -32_000.0,
+        21_000.0,
+        35_000.0,
+    ]
+    return (
+        (float(bbox[0]) + float(bbox[2])) * 0.5,
+        (float(bbox[1]) + float(bbox[3])) * 0.5,
+    )

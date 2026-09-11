@@ -106,6 +106,10 @@ def _push_dest(
     foe = _nearest_foe(world, unit, island)
     if foe is not None:
         return (foe.x, foe.y)
+    if unit.kind == "infantry":
+        lane = _forest_dest(unit, island, intel)
+        if lane is not None:
+            return lane
     if hop is not None:
         return hop
     if unit.kind == "artillery":
@@ -158,6 +162,8 @@ def _assign_garrison(
                     if unit.id in busy or unit.id in used or unit.kind != kind:
                         continue
                     if not is_surplus(unit, island, assault, held):
+                        continue
+                    if kind == "infantry" and _forest_dest(unit, island, intel):
                         continue
                     d = hypot(unit.x - dest[0], unit.y - dest[1])
                     if d < best_d:
@@ -228,31 +234,44 @@ def _island_has_foe(world: World, island: int) -> bool:
     return False
 
 
+def _forest_dest(
+    unit: DynamicObject, island: int, intel: IntelOps
+) -> tuple[float, float] | None:
+    """Nearest forest lane never looked at. Lanes barred to drones come first."""
+    todo = intel.forest.ground_debt(island) or intel.forest.pending(island)
+    if not todo:
+        return None
+    return min(todo, key=lambda pt: hypot(pt[0] - unit.x, pt[1] - unit.y))
+
+
 def _sweep_cell(world: World, unit: DynamicObject, island: int, intel: IntelOps):
+    """Walk the forest lanes nobody has looked at, nearest first.
+
+    Canopy hides a squad from a drone at 210 m, and more than half the lanes sit
+    under a live AA umbrella no drone may enter, so boots are the only way those
+    forests ever get searched. Lanes the air could not reach come first.
+    """
+    lane = _forest_dest(unit, island, intel)
+    if lane is not None:
+        return lane
+    stale = intel.forest.pending(island, now=world.clock.simulation_time)
+    if stale:
+        return min(stale, key=lambda pt: hypot(pt[0] - unit.x, pt[1] - unit.y))
     grid = intel.heat.grids.get(island)
     if grid is None:
         return None
-    cover = world.perception.cover
-    if cover is None:
+    inland = [
+        grid.center(i)
+        for i, land in enumerate(grid.land)
+        if land and not grid.coastal[i]
+    ]
+    if not inland:
         return None
-    forests: list[tuple[float, float]] = []
-    inland: list[tuple[float, float]] = []
-    for i, land in enumerate(grid.land):
-        if not land:
-            continue
-        pt = grid.center(i)
-        if cover.at(pt[0], pt[1], "ground") == "forest":
-            forests.append(pt)
-        elif not grid.coastal[i]:
-            inland.append(pt)
-    pool = forests or inland
-    if not pool:
-        return None
-    idx = int(getattr(unit, "sweep_i", 0) or 0) % len(pool)
-    dest = pool[idx]
+    idx = int(getattr(unit, "sweep_i", 0) or 0) % len(inland)
+    dest = inland[idx]
     if hypot(dest[0] - unit.x, dest[1] - unit.y) < SWEEP_ARRIVE_M:
         unit.sweep_i = idx + 1
-        dest = pool[unit.sweep_i % len(pool)]
+        dest = inland[unit.sweep_i % len(inland)]
     return dest
 
 
