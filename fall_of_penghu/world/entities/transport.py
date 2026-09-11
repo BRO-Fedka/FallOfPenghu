@@ -44,6 +44,7 @@ class CrossingJob:
     auto: bool = True
     wait_sim: float | None = None
     hold_shore: bool = False
+    stage: tuple[float, float] | None = None
 
 
 class Transport:
@@ -399,6 +400,7 @@ class Transport:
         home_id: str,
         unload_sim: float | None = None,
         hold_shore: bool = False,
+        stage: tuple[float, float] | None = None,
     ) -> bool:
         """PLA boat already carrying stowed cargo. No player notices."""
         world = self._world
@@ -435,9 +437,13 @@ class Transport:
             auto=True,
             wait_sim=unload_sim,
             hold_shore=hold_shore,
+            stage=stage,
         )
         self._jobs.append(job)
-        _route(world, ferry, drop_meet)
+        _route(world, ferry, stage or drop_meet)
+        if ferry.route is None and stage is not None:
+            job.stage = None
+            _route(world, ferry, drop_meet)
         if ferry.route is None:
             self._jobs = [item for item in self._jobs if item is not job]
             return False
@@ -644,6 +650,14 @@ class Transport:
             _route(world, ferry, job.drop_meet)
             return True
         if job.phase == "sailing":
+            if job.stage is not None:
+                # Form up abreast off the beach before the run in.
+                if ferry is None:
+                    return True
+                if _ferry_at_water(ferry, job.stage) or ferry.route is None:
+                    job.stage = None
+                    _route(world, ferry, job.drop_meet)
+                return True
             if ferry is not None and _ferry_at_water(ferry, job.drop_meet):
                 job.phase = "unloading"
                 job.wait_until = now + _job_wait(job, loading=False)

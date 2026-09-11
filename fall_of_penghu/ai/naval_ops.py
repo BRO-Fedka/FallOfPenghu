@@ -7,6 +7,8 @@ from fall_of_penghu.ai.china_util import (
     ARRIVE_M,
     ASSAULT_UNLOAD_SIM,
     KEEP_SHORE_BOATS,
+    approach_axis,
+    axis_vec,
     LANDING_LAUNCH_S,
     LANDING_MAGAZINE,
     MAX_ASSAULT_SHIPS,
@@ -35,6 +37,9 @@ if TYPE_CHECKING:
 CARGO_KINDS = ("infantry", "artillery", "tank")
 OCCUPY_RETRY_S = 900.0
 MAX_OCCUPY = 2
+STAGE_OFF_M = 2_500.0
+ABREAST_M = 600.0
+ABREAST_N = 4
 
 
 class NavalOps:
@@ -49,6 +54,7 @@ class NavalOps:
         self._beach_i = 0
         self._occupy_sim: dict[int, float] = {}
         self._occupy_ids: set[str] = set()
+        self.axis = "west"
 
     def step(self, world: World, intel: IntelOps) -> None:
         self._spawn_landing_ships(world)
@@ -72,8 +78,9 @@ class NavalOps:
         oid = f"c_landing_{self._ship_seq}"
         if world.entities.get(oid) is not None or oid in world.entities.forgotten_ids:
             return
-        edge = border_xy(world, self._ship_seq * 2 - 1)
-        station = standoff_slot(world, self._ship_seq)
+        axis = self._axis(world, self._ship_seq)
+        edge = border_xy(world, self._ship_seq * 2 - 1, axis)
+        station = standoff_slot(world, self._ship_seq, axis)
         ship = DynamicObject(
             id=oid,
             faction=FACTION_CHINA,
@@ -89,7 +96,16 @@ class NavalOps:
         ship.task = "to_station"
         world.entities.add(ship)
         sail(world, ship, station)
-        self.log.emit(now, "spawn", f"{oid} border {edge[0]:.0f},{edge[1]:.0f}")
+        self.log.emit(
+            now, "spawn", f"{oid} {axis} border {edge[0]:.0f},{edge[1]:.0f}"
+        )
+
+    def _axis(self, world: World, ship_seq: int) -> str:
+        """Approach side of the wave this hull belongs to."""
+        wave = max(0, ship_seq - 1) // MAX_LANDING_SHIPS
+        axis = approach_axis(world, wave)
+        self.axis = axis
+        return axis
 
     def _occupy_quiet(self, world: World, ships: list[DynamicObject]) -> None:
         """One ferry of infantry per inhabited island where nothing is defending.
@@ -250,7 +266,9 @@ class NavalOps:
                     ferry.task = "reload"
                     sail(world, ferry, (ship.x, ship.y))
                 continue
-            beach = _next_beach(world, intel, MAX_SHORE_BOATS, self._beach_i)
+            beach = _next_beach(
+                world, intel, MAX_SHORE_BOATS, self._beach_i, self.axis
+            )
             if beach is None:
                 ferry.task = "hold_shore"
                 ferry.route = None
@@ -278,7 +296,8 @@ class NavalOps:
         ships: list[DynamicObject],
         active: list[DynamicObject],
     ) -> None:
-        station = standoff_slot(world, _slot_index(ship))
+        axis = self._axis(world, _slot_index(ship))
+        station = standoff_slot(world, _slot_index(ship), axis)
         slot = _slot_index(ship) * 2 - 1
         if ship.magazine <= 0:
             if (ship.task or "") != "leave":
@@ -286,9 +305,9 @@ class NavalOps:
                 self.log.emit(
                     world.clock.simulation_time, "empty", f"{ship.id} magazine empty"
                 )
-            leave_off_map(world, ship, station, self.log, slot)
+            leave_off_map(world, ship, station, self.log, slot, axis)
             return
-        if leave_off_map(world, ship, station, self.log, slot):
+        if leave_off_map(world, ship, station, self.log, slot, axis):
             return
         if ship not in active:
             return
@@ -299,7 +318,7 @@ class NavalOps:
             return
         if _china_ferry_count(world) >= MAX_SHORE_BOATS:
             return
-        beach = _next_beach(world, intel, MAX_SHORE_BOATS, self._beach_i)
+        beach = _next_beach(world, intel, MAX_SHORE_BOATS, self._beach_i, self.axis)
         if beach is None:
             return
         if not self._launch_landing(world, ship, beach):
@@ -321,6 +340,7 @@ class NavalOps:
         kind: str | None = None,
     ) -> bool:
         cargo, ferry = self._make_boat(world, ship, kind=kind)
+        _abreast(ferry, self._beach_i, self.axis)
         world.entities.add(cargo)
         world.entities.add(ferry)
         if not world.transport.assault_beach(
@@ -329,6 +349,7 @@ class NavalOps:
             home_id=ship.id,
             unload_sim=ASSAULT_UNLOAD_SIM,
             hold_shore=True,
+            stage=_stage_point(world, beach, self.axis, self._beach_i),
         ):
             world.entities.discard(ferry.id)
             world.entities.discard(cargo.id)
@@ -353,6 +374,7 @@ class NavalOps:
             home_id=ship.id,
             unload_sim=ASSAULT_UNLOAD_SIM,
             hold_shore=True,
+            stage=_stage_point(world, beach, self.axis, self._beach_i),
         ):
             world.entities.discard(cargo.id)
             ferry.cargo_id = None
@@ -421,6 +443,32 @@ def _assault_ships(ships: list[DynamicObject]) -> list[DynamicObject]:
     ]
     ready.sort(key=lambda ship: ship.id)
     return ready[:MAX_ASSAULT_SHIPS]
+
+
+def _stage_point(
+    world: World, beach: tuple[float, float], axis: str, index: int
+) -> tuple[float, float] | None:
+    """Form-up point offshore, one lane per boat across the approach front."""
+    planner = world.entities.planner
+    if planner is None:
+        return None
+    vx, vy = axis_vec(axis)
+    px, py = -vy, vx
+    lane = ((index % ABREAST_N) - (ABREAST_N - 1) / 2.0) * ABREAST_M
+    pt = (
+        beach[0] + vx * STAGE_OFF_M + px * lane,
+        beach[1] + vy * STAGE_OFF_M + py * lane,
+    )
+    water = planner.nearest_water(pt[0], pt[1])
+    return water or pt
+
+
+def _abreast(ferry: DynamicObject, index: int, axis: str) -> None:
+    """Push the boat off its ship's exact spot so hulls do not sail nose to tail."""
+    vx, vy = axis_vec(axis)
+    lane = ((index % ABREAST_N) - (ABREAST_N - 1) / 2.0) * ABREAST_M
+    ferry.x -= vy * lane
+    ferry.y += vx * lane
 
 
 def _boat_running(boat: DynamicObject | None) -> bool:
@@ -531,7 +579,7 @@ def _island_beach(world: World, island: int) -> tuple[float, float] | None:
 
 
 def _next_beach(
-    world: World, intel: IntelOps, n_boats: int, index: int
+    world: World, intel: IntelOps, n_boats: int, index: int, axis: str = "west"
 ) -> tuple[float, float] | None:
     assault = intel.assault
     if assault is None:
@@ -544,7 +592,7 @@ def _next_beach(
         beach = _island_beach(world, iid)
         if beach is not None:
             return beach
-    return _spread_beach(world, intel, n_boats, index)
+    return _spread_beach(world, intel, n_boats, index, axis)
 
 
 def _slot_index(ship: DynamicObject) -> int:
@@ -555,7 +603,7 @@ def _slot_index(ship: DynamicObject) -> int:
 
 
 def _spread_beach(
-    world: World, intel: IntelOps, n_boats: int, index: int
+    world: World, intel: IntelOps, n_boats: int, index: int, axis: str = "west"
 ) -> tuple[float, float] | None:
     assault = intel.assault
     if assault is None:
@@ -569,12 +617,34 @@ def _spread_beach(
             assault.x, assault.y, island=assault.island, max_m=80_000.0
         )
         return None if coast is None else coast[1]
-    idx = min(
-        range(len(samples)),
-        key=lambda i: hypot(samples[i][0] - assault.x, samples[i][1] - assault.y),
-    )
+    idx = _axis_anchor(planner, assault, samples, axis)
     n = max(n_boats, 1)
     step = max(1, int(round(len(samples) / max(n * 2, 8))))
     half = n // 2
     j = (idx + (index % n - half) * step) % len(samples)
     return samples[j]
+
+
+def _axis_anchor(planner, assault, samples, axis: str) -> int:
+    """Beach on the side the wave came from, among those close to the heat pick.
+
+    Coming ashore where the heatmap likes it but from the north or south costs
+    the player his prepared west-facing arc of fire.
+    """
+    minx, miny, maxx, maxy = planner.land.islands.bbox(assault.island)
+    cx = (minx + maxx) * 0.5
+    cy = (miny + maxy) * 0.5
+    vx, vy = axis_vec(axis)
+    span = max(maxx - minx, maxy - miny, 1.0)
+    near = sorted(
+        range(len(samples)),
+        key=lambda i: hypot(samples[i][0] - assault.x, samples[i][1] - assault.y),
+    )
+    window = near[: max(1, len(samples) // 2)]
+    return max(
+        window,
+        key=lambda i: (
+            (samples[i][0] - cx) * vx + (samples[i][1] - cy) * vy
+        )
+        / span,
+    )

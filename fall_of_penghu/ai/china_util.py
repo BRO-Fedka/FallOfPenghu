@@ -14,7 +14,14 @@ if TYPE_CHECKING:
     from fall_of_penghu.world.world import World
 
 STANDOFF_M = 20_000.0
-TAIWAN_CLEAR_M = 30_000.0
+TAIWAN_CLEAR_M = 20_000.0
+AXES = ("west", "north", "south", "east")
+AXIS_VECS = {
+    "west": (-1.0, 0.0),
+    "east": (1.0, 0.0),
+    "north": (0.0, 1.0),
+    "south": (0.0, -1.0),
+}
 EDGE_INSET_M = 600.0
 CARRIER_MAGAZINE = 30
 LANDING_MAGAZINE = 20
@@ -40,16 +47,57 @@ def map_frame(world: World) -> tuple[float, float, float, float]:
     return (float(mn[0]), float(mn[1]), float(mx[0]), float(mx[1]))
 
 
-def standoff_xy(world: World) -> tuple[float, float]:
-    bbox = world.map.manifest.get("bbox_penghu") or [-22000.0, -32000.0, 21000.0, 35000.0]
-    return (float(bbox[0]) - STANDOFF_M, (float(bbox[1]) + float(bbox[3])) * 0.5)
+def penghu_bbox(world: World) -> tuple[float, float, float, float]:
+    bbox = world.map.manifest.get("bbox_penghu") or [
+        -22000.0,
+        -32000.0,
+        21000.0,
+        35000.0,
+    ]
+    return (float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3]))
 
 
-def standoff_slot(world: World, index: int) -> tuple[float, float]:
-    x, y = standoff_xy(world)
+def axis_vec(axis: str) -> tuple[float, float]:
+    """Unit vector from the islands toward the chosen approach side."""
+    return AXIS_VECS.get(axis, AXIS_VECS["west"])
+
+
+def axis_order(world: World) -> tuple[str, ...]:
+    """Approach sides China may use. Taiwan's coastal strip is not one of them."""
+    out = [
+        axis
+        for axis in AXES
+        if taiwan_dist_m(world, *_edge_center(world, axis)) >= TAIWAN_CLEAR_M
+    ]
+    return tuple(out) or ("west",)
+
+
+def approach_axis(world: World, wave: int) -> str:
+    """One side per wave, rotated so consecutive landings come from elsewhere."""
+    order = axis_order(world)
+    seed = int(getattr(world, "seed", 0) or 0)
+    return order[(wave * 2 + seed) % len(order)]
+
+
+def standoff_xy(world: World, axis: str = "west") -> tuple[float, float]:
+    minx, miny, maxx, maxy = penghu_bbox(world)
+    cx = (minx + maxx) * 0.5
+    cy = (miny + maxy) * 0.5
+    vx, vy = axis_vec(axis)
+    x = (minx - STANDOFF_M) if vx < 0 else (maxx + STANDOFF_M) if vx > 0 else cx
+    y = (miny - STANDOFF_M) if vy < 0 else (maxy + STANDOFF_M) if vy > 0 else cy
+    return _in_frame(world, (x, y))
+
+
+def standoff_slot(
+    world: World, index: int, axis: str = "west"
+) -> tuple[float, float]:
+    x, y = standoff_xy(world, axis)
     n = (index + 1) // 2
     sign = 1.0 if index % 2 else -1.0
-    return (x, y + sign * n * SLOT_SPACING_M)
+    px, py = _lateral(axis)
+    off = sign * n * SLOT_SPACING_M
+    return _in_frame(world, (x + px * off, y + py * off))
 
 
 def taiwan_dist_m(world: World, x: float, y: float) -> float:
@@ -63,26 +111,51 @@ def taiwan_dist_m(world: World, x: float, y: float) -> float:
     return best
 
 
-def border_xy(world: World, slot: int = 0) -> tuple[float, float]:
-    minx, miny, maxx, maxy = map_frame(world)
-    x = minx + EDGE_INSET_M
-    _, cy = standoff_xy(world)
+def border_xy(world: World, slot: int = 0, axis: str = "west") -> tuple[float, float]:
+    """Spawn and reload point on the map border, on the wave's approach side."""
+    anchor = _edge_center(world, axis)
+    px, py = _lateral(axis)
     n = (abs(slot) + 1) // 2
     sign = 1.0 if slot % 2 else -1.0
-    y = cy + sign * n * SLOT_SPACING_M
-    y = min(max(y, miny + EDGE_INSET_M), maxy - EDGE_INSET_M)
+    off = sign * n * SLOT_SPACING_M
+    pt = _in_frame(world, (anchor[0] + px * off, anchor[1] + py * off))
     planner = world.entities.planner
     if planner is not None:
-        water = planner.nearest_water(x, y)
+        water = planner.nearest_water(pt[0], pt[1])
         if water is not None:
-            x, y = water
-    if taiwan_dist_m(world, x, y) < TAIWAN_CLEAR_M:
-        x = minx + EDGE_INSET_M
-        if planner is not None:
-            water = planner.nearest_water(x, cy)
-            if water is not None:
-                return water
-    return (x, y)
+            pt = water
+    if taiwan_dist_m(world, pt[0], pt[1]) >= TAIWAN_CLEAR_M:
+        return pt
+    fallback = _edge_center(world, "west")
+    if planner is not None:
+        water = planner.nearest_water(fallback[0], fallback[1])
+        if water is not None:
+            return water
+    return fallback
+
+
+def _edge_center(world: World, axis: str) -> tuple[float, float]:
+    minx, miny, maxx, maxy = map_frame(world)
+    bminx, bminy, bmaxx, bmaxy = penghu_bbox(world)
+    cx = (bminx + bmaxx) * 0.5
+    cy = (bminy + bmaxy) * 0.5
+    vx, vy = axis_vec(axis)
+    x = (minx + EDGE_INSET_M) if vx < 0 else (maxx - EDGE_INSET_M) if vx > 0 else cx
+    y = (miny + EDGE_INSET_M) if vy < 0 else (maxy - EDGE_INSET_M) if vy > 0 else cy
+    return _in_frame(world, (x, y))
+
+
+def _lateral(axis: str) -> tuple[float, float]:
+    vx, vy = axis_vec(axis)
+    return (-vy, vx)
+
+
+def _in_frame(world: World, pt: tuple[float, float]) -> tuple[float, float]:
+    minx, miny, maxx, maxy = map_frame(world)
+    return (
+        min(max(pt[0], minx + EDGE_INSET_M), maxx - EDGE_INSET_M),
+        min(max(pt[1], miny + EDGE_INSET_M), maxy - EDGE_INSET_M),
+    )
 
 
 def sail(world: World, ship: DynamicObject, xy: tuple[float, float]) -> None:
@@ -105,6 +178,7 @@ def leave_off_map(
     station: tuple[float, float],
     log: DecisionLog | None = None,
     slot: int = 0,
+    axis: str = "west",
 ) -> bool:
     """True while the ship is arriving, leaving, or just despawned."""
     now = world.clock.simulation_time
@@ -121,7 +195,7 @@ def leave_off_map(
         return True
     if task != "leave":
         return False
-    edge = border_xy(world, slot)
+    edge = border_xy(world, slot, axis)
     if at_xy(ship, edge, LEAVE_ARRIVE_M):
         if log is not None:
             log.emit(now, "despawn", f"{ship.id} edge {edge[0]:.0f},{edge[1]:.0f}")

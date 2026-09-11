@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 from fall_of_penghu.ai.china_util import (
     CARRIER_MAGAZINE,
     LAUNCH_SIM_S,
+    approach_axis,
     border_xy,
     leave_off_map,
     sail,
@@ -63,8 +64,9 @@ class AirOps:
         oid = f"c_carrier_{self._carrier_n}"
         if world.entities.get(oid) is not None or oid in world.entities.forgotten_ids:
             return None
-        x, y = border_xy(world, self._carrier_n * 2)
-        station = standoff_xy(world)
+        axis = approach_axis(world, self._carrier_n)
+        x, y = border_xy(world, self._carrier_n * 2, axis)
+        station = standoff_xy(world, axis)
         carrier = DynamicObject(
             id=oid,
             faction=FACTION_CHINA,
@@ -83,7 +85,7 @@ class AirOps:
         self.log.emit(
             world.clock.simulation_time,
             "spawn",
-            f"{oid} border {x:.0f},{y:.0f}",
+            f"{oid} {axis} border {x:.0f},{y:.0f}",
         )
         return carrier
 
@@ -102,15 +104,17 @@ class AirOps:
         for drone in drones:
             self._steer(world, drone, intel, now, load)
         for carrier in list(_carriers(world)):
-            station = standoff_xy(world)
-            slot = _slot_from_id(carrier.id, 1) * 2
+            n = _slot_from_id(carrier.id, 1)
+            axis = approach_axis(world, n)
+            station = standoff_xy(world, axis)
+            slot = n * 2
             if carrier.magazine <= 0:
                 if (carrier.task or "") != "leave":
                     carrier.task = "leave"
                     self.log.emit(now, "empty", f"{carrier.id} magazine empty")
-                leave_off_map(world, carrier, station, self.log, slot)
+                leave_off_map(world, carrier, station, self.log, slot, axis)
                 continue
-            if leave_off_map(world, carrier, station, self.log, slot):
+            if leave_off_map(world, carrier, station, self.log, slot, axis):
                 continue
             if now < float(carrier.weapon_ready_sim or 0.0):
                 continue
