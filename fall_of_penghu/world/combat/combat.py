@@ -5,7 +5,7 @@ from math import atan2, cos, hypot, pi, sin, sqrt
 from typing import TYPE_CHECKING
 
 from fall_of_penghu.world.combat.doctrine import HOLD, accepts, is_battery
-from fall_of_penghu.world.combat.health import apply_damage, wreck
+from fall_of_penghu.world.combat.health import apply_damage, restock, wreck
 from fall_of_penghu.world.combat.priority import hit_chance_for, target_score
 from fall_of_penghu.world.entities.dynamic import DynamicObject
 from fall_of_penghu.world.entities.game_object import GameObject
@@ -55,6 +55,7 @@ class Combat:
                     if target is not None and target.active:
                         apply_damage(target, shot.damage, world)
         self._kamikaze(world)
+        restock(world)
         factions = {obj.faction for obj in world.entities.items if is_battery(obj)}
         for faction in factions:
             self._engage(world, faction, now, missiles, tracers)
@@ -116,7 +117,7 @@ class Combat:
             reach = catalog.engagement_m(battery.kind)
             if reach is None:
                 continue
-            if now < float(getattr(battery, "weapon_ready_sim", 0.0)):
+            if not _weapon_ready(battery, catalog, now):
                 continue
             if catalog.must_halt(battery.kind) and getattr(battery, "moving", False):
                 continue
@@ -127,7 +128,7 @@ class Combat:
                 if self._engage_artillery(
                     world, battery, foes, reach, doctrine, now, catalog
                 ):
-                    battery.weapon_ready_sim = now + catalog.cooldown_sim_s(battery.kind)
+                    _spend_shot(battery, catalog, now)
                     in_flight[battery.id] = in_flight.get(battery.id, 0) + 1
                 continue
             if doctrine == HOLD:
@@ -139,7 +140,7 @@ class Combat:
             if target is None:
                 continue
             self._spawn(world, battery, target, now, catalog)
-            battery.weapon_ready_sim = now + catalog.cooldown_sim_s(battery.kind)
+            _spend_shot(battery, catalog, now)
             if reserve:
                 claimed.add(target.id)
             in_flight[battery.id] = in_flight.get(battery.id, 0) + 1
@@ -334,6 +335,50 @@ class Combat:
                 scatter_m=scatter,
             )
         )
+
+
+def _weapon_ready(battery: DynamicObject, catalog: DetectionCatalog, now: float) -> bool:
+    """Finish a magazine reload if due, then say whether a shot may leave now."""
+    _finish_reload(battery, catalog, now)
+    if now < float(getattr(battery, "weapon_ready_sim", 0.0) or 0.0):
+        return False
+    if getattr(battery, "reloading", False):
+        return False
+    if catalog.limited_ammo(battery.kind) and int(getattr(battery, "clip", 0) or 0) <= 0:
+        return False
+    return True
+
+
+def _finish_reload(battery: DynamicObject, catalog: DetectionCatalog, now: float) -> None:
+    if not catalog.limited_ammo(battery.kind):
+        return
+    if int(getattr(battery, "clip", 0) or 0) > 0:
+        battery.reloading = False
+        return
+    reserve = int(getattr(battery, "reserve", 0) or 0)
+    if reserve <= 0:
+        battery.reloading = False
+        return
+    if not getattr(battery, "reloading", False):
+        battery.reloading = True
+        battery.weapon_ready_sim = now + catalog.reload_sim_s(battery.kind)
+        return
+    if now < float(getattr(battery, "weapon_ready_sim", 0.0) or 0.0):
+        return
+    take = min(catalog.clip_size(battery.kind), reserve)
+    battery.reserve = reserve - take
+    battery.clip = take
+    battery.reloading = False
+
+
+def _spend_shot(battery: DynamicObject, catalog: DetectionCatalog, now: float) -> None:
+    if catalog.limited_ammo(battery.kind):
+        battery.clip = max(0, int(getattr(battery, "clip", 0) or 0) - 1)
+        if battery.clip <= 0 and int(getattr(battery, "reserve", 0) or 0) > 0:
+            battery.reloading = True
+            battery.weapon_ready_sim = now + catalog.reload_sim_s(battery.kind)
+            return
+    battery.weapon_ready_sim = now + catalog.cooldown_sim_s(battery.kind)
 
 
 def _eligible(

@@ -82,6 +82,9 @@ class DetectionCatalog:
         self._hp_kinds = {
             str(k): float(v) for k, v in (health.get("kinds") or {}).items()
         }
+        self.rest_idle_sim_s = float(health.get("rest_idle_sim_s") or 90.0)
+        self.heal_full_sim_s = float(health.get("heal_full_sim_s") or 1800.0)
+        self.ammo_full_sim_s = float(health.get("ammo_full_sim_s") or 1800.0)
         movement = data.get("movement") or {}
         self._move_defaults = movement.get("defaults") or {}
         self._move_kinds = movement.get("kinds") or {}
@@ -154,6 +157,32 @@ class DetectionCatalog:
 
     def cooldown_sim_s(self, kind: str) -> float:
         return float(self.weapon(kind).get("cooldown_sim_s") or 5.0)
+
+    def clip_size(self, kind: str) -> int:
+        return max(0, int(self.weapon(kind).get("clip") or 0))
+
+    def reserve_size(self, kind: str) -> int:
+        return max(0, int(self.weapon(kind).get("reserve") or 0))
+
+    def reload_sim_s(self, kind: str) -> float:
+        return float(self.weapon(kind).get("reload_sim_s") or 0.0)
+
+    def limited_ammo(self, kind: str) -> bool:
+        return self.clip_size(kind) > 0
+
+    def ammo_caption(self, obj: GameObject, now: float) -> str | None:
+        """Magazine / reserve, plus reload countdown. None if the kind is unlimited."""
+        if not self.limited_ammo(obj.kind):
+            return None
+        clip = int(getattr(obj, "clip", 0) or 0)
+        reserve = int(getattr(obj, "reserve", 0) or 0)
+        text = f"{clip}/{reserve}"
+        if getattr(obj, "reloading", False):
+            left = max(0.0, float(getattr(obj, "weapon_ready_sim", 0.0) or 0.0) - now)
+            return f"{text} RLD {left:.0f}s"
+        if clip <= 0 and reserve <= 0:
+            return f"{text} EMPTY"
+        return text
 
     def max_in_flight(self, kind: str) -> int:
         return int(self.weapon(kind).get("max_in_flight") or 1)

@@ -46,6 +46,12 @@ class DynamicObject(GameObject):
             else "hold"
         )
         self.weapon_ready_sim = 0.0
+        self.clip = 0
+        self.reserve = 0
+        self.reloading = False
+        self.last_hurt_sim = 0.0
+        self.last_moved_sim = 0.0
+        self.rest_ammo_acc = 0.0
         self.cargo_id: str | None = None
         self.strike_id: str | None = None
         self.armed = False

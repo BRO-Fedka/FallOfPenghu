@@ -30,3 +30,4 @@ class GameObject:
     hp: float = 1.0
     max_hp: float = 1.0
     ferries: int = 0
+    last_hurt_sim: float = 0.0

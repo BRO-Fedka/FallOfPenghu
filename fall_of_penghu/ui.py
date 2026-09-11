@@ -420,6 +420,18 @@ class Hud:
                 ),
             )
 
+        if perception is not None and entities is not None and selection is not None:
+            ammo = _selection_ammo(
+                selection, entities, perception.catalog, clock.simulation_time
+            )
+            if ammo:
+                last = self._doctrine_buttons[-1][0] if self._doctrine_buttons else self._engage_hit
+                label = self.small.render(ammo, True, ink)
+                bar.blit(
+                    label,
+                    (last.right + MODE_GAP, (PANEL_H - label.get_height()) // 2),
+                )
+
         if perception is not None:
             sat = perception.satellite_status(clock.calendar_time)
             if sat.active:
@@ -463,6 +475,10 @@ class Hud:
             max_hp = getattr(hover, "max_hp", None)
             if hp is not None and max_hp is not None and float(max_hp) > 1.5:
                 tip = f"{tip}  {int(hp)}/{int(max_hp)}"
+            if perception is not None:
+                ammo = perception.catalog.ammo_caption(hover, clock.simulation_time)
+                if ammo:
+                    tip = f"{tip}  {ammo}"
             if hover.kind == "port":
                 stock = int(getattr(hover, "ferries", 0) or 0)
                 tip = f"{tip}  ferries {stock}/20"
@@ -668,3 +684,17 @@ class Hud:
             )
             y += LINE_H
         renderer.overlay(surf, (panel.x, panel.y))
+
+
+def _selection_ammo(
+    selection: Selection,
+    entities: Entities,
+    catalog,
+    now: float,
+) -> str | None:
+    if len(selection.selected) != 1:
+        return None
+    obj = entities.get(next(iter(selection.selected)))
+    if obj is None:
+        return None
+    return catalog.ammo_caption(obj, now)

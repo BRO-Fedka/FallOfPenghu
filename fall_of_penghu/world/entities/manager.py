@@ -66,6 +66,11 @@ class ObjectManager:
                 obj.doctrine = catalog.default_doctrine(obj.kind)
         obj.max_hp = catalog.max_hp(obj.kind)
         obj.hp = obj.max_hp
+        if isinstance(obj, DynamicObject) and catalog.limited_ammo(obj.kind):
+            obj.clip = catalog.clip_size(obj.kind)
+            obj.reserve = catalog.reserve_size(obj.kind)
+            obj.reloading = False
+            obj.rest_ammo_acc = 0.0
 
     def discard(self, object_id: str) -> None:
         self._by_id.pop(object_id, None)

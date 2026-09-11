@@ -97,6 +97,9 @@
     }
   },
   "health": {
+    "rest_idle_sim_s": 90.0,
+    "heal_full_sim_s": 1800.0,
+    "ammo_full_sim_s": 1800.0,
     "default": 100.0,
     "kinds": {
       "drone": 100.0,
@@ -127,7 +130,10 @@
       "damage": 100.0,
       "cooldown_sim_s": 5.0,
       "max_in_flight": 1,
-      "engage_mobility": ["air"]
+      "engage_mobility": ["air"],
+      "clip": 4,
+      "reserve": 12,
+      "reload_sim_s": 40.0
     },
     "aa_pickup": {
       "engagement_m": 2000.0,
@@ -137,7 +143,10 @@
       "hit_p0": 0.55,
       "cooldown_sim_s": 0.35,
       "max_in_flight": 6,
-      "engage_mobility": ["air", "land"]
+      "engage_mobility": ["air", "land"],
+      "clip": 20,
+      "reserve": 60,
+      "reload_sim_s": 10.0
     },
     "infantry": {
       "engagement_m": 750.0,
@@ -177,7 +186,10 @@
       "speed_mps": 350.0,
       "life_sim_s": 40.0,
       "scatter_min_m": 20.0,
-      "scatter_max_m": 250.0
+      "scatter_max_m": 250.0,
+      "clip": 8,
+      "reserve": 24,
+      "reload_sim_s": 60.0
     },
     "intercept": {
       "speed_mps": 220.0,
