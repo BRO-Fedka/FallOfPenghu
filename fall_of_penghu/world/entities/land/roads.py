@@ -22,8 +22,36 @@ class IslandRoads:
     def __init__(self) -> None:
         self.nodes: list[tuple[float, float]] = []
         self.adj: list[list[tuple[int, float]]] = []
+        self.edges: list[tuple[int, int]] = []
         self._grid: dict[tuple[int, int], list[int]] = {}
+        self._segs: dict[tuple[int, int], list[int]] = {}
         self._cache: dict[tuple[int, int], list[int] | None] = {}
+
+    def near_edge(self, x: float, y: float, max_m: float) -> float | None:
+        """Distance to the closest road segment, not to the closest node.
+
+        A unit halfway between two nodes is still on the road, so node
+        distance alone would strip it of road speed.
+        """
+        if not self.edges:
+            return None
+        rad = int(max_m // HASH_M) + 1
+        gx, gy = int(x // HASH_M), int(y // HASH_M)
+        best = max_m * max_m
+        hit = False
+        seen: set[int] = set()
+        for ox in range(gx - rad, gx + rad + 1):
+            for oy in range(gy - rad, gy + rad + 1):
+                for e in self._segs.get((ox, oy), ()):
+                    if e in seen:
+                        continue
+                    seen.add(e)
+                    ia, ib = self.edges[e]
+                    d = _seg_dist2(x, y, self.nodes[ia], self.nodes[ib])
+                    if d < best:
+                        best = d
+                        hit = True
+        return best**0.5 if hit else None
 
     def nearest(self, x: float, y: float, max_m: float | None = None) -> int | None:
         if not self.nodes:
@@ -180,5 +208,37 @@ def _snap_graph(
         grid.setdefault((int(x // HASH_M), int(y // HASH_M)), []).append(i)
     graph.nodes = nodes
     graph.adj = adj
+    graph.edges = sorted(seen)
     graph._grid = grid
+    graph._segs = _seg_grid(nodes, graph.edges)
     return graph
+
+
+def _seg_grid(
+    nodes: list[tuple[float, float]],
+    edges: list[tuple[int, int]],
+) -> dict[tuple[int, int], list[int]]:
+    out: dict[tuple[int, int], list[int]] = {}
+    for e, (ia, ib) in enumerate(edges):
+        ax, ay = nodes[ia]
+        bx, by = nodes[ib]
+        for gx in range(int(min(ax, bx) // HASH_M), int(max(ax, bx) // HASH_M) + 1):
+            for gy in range(int(min(ay, by) // HASH_M), int(max(ay, by) // HASH_M) + 1):
+                out.setdefault((gx, gy), []).append(e)
+    return out
+
+
+def _seg_dist2(
+    x: float,
+    y: float,
+    a: tuple[float, float],
+    b: tuple[float, float],
+) -> float:
+    ax, ay = a
+    dx, dy = b[0] - ax, b[1] - ay
+    span = dx * dx + dy * dy
+    if span <= 0.0:
+        return (x - ax) ** 2 + (y - ay) ** 2
+    t = ((x - ax) * dx + (y - ay) * dy) / span
+    t = 0.0 if t < 0.0 else (1.0 if t > 1.0 else t)
+    return (x - ax - t * dx) ** 2 + (y - ay - t * dy) ** 2
