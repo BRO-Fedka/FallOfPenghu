@@ -25,7 +25,6 @@ ICON_PX = 14
 INACTIVE_X = (220, 40, 40)
 ROUTE_COLOR = (120, 200, 255, 180)
 SELECT_COLOR = (255, 230, 80, 220)
-RING_SEGS = 72
 RING_COLOR = (70, 190, 120, 90)
 PRIMITIVE_RING = (70, 170, 220, 110)
 ADVANCED_RING = (170, 90, 220, 110)
@@ -517,21 +516,10 @@ class DynamicRenderer:
         screen_h: int,
         color: tuple[int, int, int, int] = RING_COLOR,
     ) -> None:
-        lines: list[list[tuple[float, float]]] = []
-        for x, y, radius in rings:
-            if radius <= 1.0:
-                continue
-            pts: list[tuple[float, float]] = []
-            for i in range(RING_SEGS + 1):
-                ang = (2.0 * pi) * i / RING_SEGS
-                sx, sy = camera.world_to_screen(
-                    x + cos(ang) * radius, y + sin(ang) * radius, screen_w, screen_h
-                )
-                pts.append((sx, sy))
-            if _polyline_hits_view(pts, screen_w, screen_h):
-                lines.append(pts)
-        if lines:
-            renderer.overlay_aalines(lines, color)
+        visible = [(x, y, radius) for x, y, radius in rings if radius > 1.0]
+        if not visible:
+            return
+        renderer.overlay_rings(visible, color, camera, screen_w, screen_h)
 
     def _draw_flames(
         self,

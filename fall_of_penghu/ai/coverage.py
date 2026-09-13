@@ -44,13 +44,26 @@ class ForestCoverage:
         self._mark_sim = -1e9
 
     def bake(self, world: World, heat: IslandHeatmaps) -> None:
-        cover = world.perception.cover
         self.lanes = {}
         self.seen = {}
         self.ever = {}
         self.air_blocked = {}
         self._buckets = {}
         self._mark_sim = -1e9
+        baked = getattr(world, "sim_bake", None)
+        if baked is not None:
+            data = baked.payload["forest"]
+            self.lane_m = float(data["lane_m"])
+            for key, pts in data["lanes"].items():
+                iid = int(key)
+                lanes = tuple((float(p[0]), float(p[1])) for p in pts)
+                self.lanes[iid] = lanes
+                self.seen[iid] = [0.0] * len(lanes)
+                self.ever[iid] = [False] * len(lanes)
+                self.air_blocked[iid] = [False] * len(lanes)
+            self._index()
+            return
+        cover = world.perception.cover
         if cover is None:
             return
         cell = max(50.0, world.catalog.heat_cell_m)

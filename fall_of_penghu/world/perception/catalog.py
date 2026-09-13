@@ -71,7 +71,7 @@ class DetectionCatalog:
         self._heat_splat = heat.get("splat") or {}
         self._landing_weight = heat.get("landing_weight") or {}
         lookout = data.get("lookout") or {}
-        self.lookout_simplify_m = float(lookout.get("simplify_m") or 20.0)
+        self.lookout_simplify_m = float(lookout.get("simplify_m") or 50.0)
         sat = data.get("satellite_windows") or {}
         self.sat_faction = str(sat.get("faction") or "C")
         self.sat_always_day = bool(sat.get("always_day"))

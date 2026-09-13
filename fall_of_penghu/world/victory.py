@@ -15,10 +15,6 @@ if TYPE_CHECKING:
 
 def player_holds_islands(world: World) -> bool:
     """True if player ground dynamics still stand on any island. Air does not hold."""
-    planner = world.entities.planner
-    if planner is None:
-        return False
-    islands = planner.land.islands
     for obj in world.entities.items:
         if not isinstance(obj, DynamicObject) or not obj.active:
             continue
@@ -28,9 +24,7 @@ def player_holds_islands(world: World) -> bool:
             continue
         if obj.kind in SHOT_KINDS or is_static_kind(obj.kind):
             continue
-        if islands.at(obj.x, obj.y) is not None:
-            return True
-        if islands.nearest(obj.x, obj.y, 50.0) is not None:
+        if obj.island_id() is not None:
             return True
     return False
 

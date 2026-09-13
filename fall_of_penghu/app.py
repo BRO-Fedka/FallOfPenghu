@@ -72,7 +72,7 @@ def run() -> None:
     world.perception.step(world)
 
     while not controls.quit:
-        dt_wall = frame_clock.tick(6000) / 1000.0
+        dt_wall = frame_clock.tick(600) / 1000.0
         screen_w, screen_h = pygame.display.get_window_size()
         mouse = pygame.mouse.get_pos()
         selection.visible_kinds = units.enabled

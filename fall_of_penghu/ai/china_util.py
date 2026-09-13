@@ -240,11 +240,7 @@ def port_islands(world: World) -> list[int]:
 
 
 def china_by_island(world: World) -> dict[int, list[DynamicObject]]:
-    planner = world.entities.planner
     out: dict[int, list[DynamicObject]] = {}
-    if planner is None:
-        return out
-    islands = planner.land.islands
     for obj in world.entities.items:
         if not isinstance(obj, DynamicObject) or not obj.active:
             continue
@@ -252,9 +248,7 @@ def china_by_island(world: World) -> dict[int, list[DynamicObject]]:
             continue
         if obj.mobility != "land" or obj.kind not in LAND_KINDS:
             continue
-        iid = islands.at(obj.x, obj.y)
-        if iid is None:
-            iid = islands.nearest(obj.x, obj.y, 120.0)
+        iid = obj.island_id()
         if iid is None:
             continue
         out.setdefault(iid, []).append(obj)
@@ -270,13 +264,16 @@ def china_owned(world: World, island: int) -> bool:
     return world.control.is_china(island)
 
 
-def capture_islands(world: World) -> list[int]:
+def capture_islands(
+    world: World, held: dict[int, list[DynamicObject]] | None = None
+) -> list[int]:
     """Inhabited islands first (deny player lookouts), then other ports."""
     planner = world.entities.planner
     if planner is None:
         return []
     islands = planner.land.islands
-    held = china_by_island(world)
+    if held is None:
+        held = china_by_island(world)
     owned = world.control.china_islands()
     lookouts = world.perception.lookouts
     inhabited = list(lookouts.inhabited) if lookouts is not None else []
@@ -295,10 +292,6 @@ def capture_islands(world: World) -> list[int]:
 
 def island_has_foe(world: World, island: int) -> bool:
     """Visible player ground on that island. Air overhead does not defend it."""
-    planner = world.entities.planner
-    if planner is None:
-        return False
-    islands = planner.land.islands
     for obj in world.perception.visible_objects(FACTION_CHINA):
         if obj.faction == FACTION_CHINA or not obj.active:
             continue
@@ -308,7 +301,7 @@ def island_has_foe(world: World, island: int) -> bool:
             continue
         if getattr(obj, "mobility", "") != "land":
             continue
-        if islands.at(obj.x, obj.y) == island:
+        if isinstance(obj, DynamicObject) and obj.island_id() == island:
             return True
     return False
 

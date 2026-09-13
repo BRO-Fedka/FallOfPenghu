@@ -1,6 +1,6 @@
 {
   "format": "fall-of-penghu-lookouts",
-  "simplify_m": 20.0,
+  "simplify_m": 50.0,
   "coast_count": 121,
   "building_count": 11099,
   "coast_hash": "9396bb8eb169a19b18a6c12f90208614bf0e8809e44d4633386cee8f0d59681d",

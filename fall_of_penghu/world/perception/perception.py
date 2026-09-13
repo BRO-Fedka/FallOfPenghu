@@ -4,6 +4,7 @@ from math import hypot
 from typing import TYPE_CHECKING
 
 from fall_of_penghu.profile import scope
+from fall_of_penghu.spatial import UniformGrid
 from fall_of_penghu.world.entities.game_object import (
     FACTION_CHINA,
     FACTION_PLAYER,
@@ -26,6 +27,8 @@ if TYPE_CHECKING:
     from fall_of_penghu.world.world import World
 
 FACTIONS = (FACTION_PLAYER, FACTION_CHINA, FACTION_TAIWAN)
+CHINA_PERIOD_WALL = 0.25
+EMITTER_CELL_M = 4_000.0
 
 
 class Perception:
@@ -63,13 +66,18 @@ class Perception:
         self._imprint_n = 0
         self._darkness = 0.0
         self.china_held: set[int] = set()
+        self._china_wall = -1e9
+        self._pose_n = 0
+        self._live_ids: set[str] = set()
+        self._stowed: dict[str, bool] = {}
 
     def bind_map(self, world: World) -> None:
-        self.cover = CoverIndex(world.map)
+        baked = getattr(world, "sim_bake", None)
+        self.cover = CoverIndex(world.map, baked=baked)
         planner = world.entities.planner
         islands = planner.land.islands if planner is not None else None
         self.lookouts = IslandLookouts(
-            world.map, islands, self.catalog.lookout_simplify_m
+            world.map, islands, self.catalog.lookout_simplify_m, baked=baked
         )
 
     def visible_objects(self, faction: str) -> list[GameObject]:
@@ -137,19 +145,9 @@ class Perception:
                 for obj in world.entities.items
                 if obj.active or is_static_kind(obj.kind)
             ]
-            for obj in objects:
-                self._pose[obj.id] = (
-                    obj.x,
-                    obj.y,
-                    obj.heading,
-                    obj.kind,
-                    obj.name,
-                    obj.faction,
-                    bool(getattr(obj, "moving", False)),
-                    tuple(getattr(obj, "trail", ()) or ()),
-                    bool(getattr(obj, "orient_radar", False)),
-                    bool(obj.active),
-                )
+            moved = self._snapshot(objects)
+        if world.clock.dt_sim <= 0.0 and not moved:
+            return
         lookouts = self.lookouts
         if lookouts is not None:
             with scope("perception.lookouts"):
@@ -157,7 +155,12 @@ class Perception:
                 self.china_held = china_held(lookouts.inhabited, occ)
         else:
             self.china_held = set()
+        china_due = (
+            moved and world.clock.dt_sim <= 0.0
+        ) or (world.clock.wall_time - self._china_wall) >= CHINA_PERIOD_WALL
         for faction in FACTIONS:
+            if faction != FACTION_PLAYER and not china_due:
+                continue
             with scope(f"perception.compute.{faction}"):
                 seen = self._compute(faction, objects, darkness, sat_on)
                 ids = {obj.id for obj in seen}
@@ -181,7 +184,48 @@ class Perception:
                 self._imprints[faction] = [
                     mark for mark in self._imprints[faction] if not mark.dead(now)
                 ]
+        if china_due:
+            self._china_wall = world.clock.wall_time
         world.notices.extend(self.alerts.flush(now))
+
+    def _snapshot(self, objects: list[GameObject]) -> bool:
+        moved = len(objects) != self._pose_n
+        live: set[str] = set()
+        for obj in objects:
+            live.add(obj.id)
+            stowed = bool(getattr(obj, "stowed", False))
+            old = self._pose.get(obj.id)
+            if (
+                old is None
+                or old[0] != obj.x
+                or old[1] != obj.y
+                or old[3] != obj.kind
+                or old[5] != obj.faction
+                or old[9] != obj.active
+                or self._stowed.get(obj.id) != stowed
+            ):
+                moved = True
+            self._stowed[obj.id] = stowed
+            self._pose[obj.id] = (
+                obj.x,
+                obj.y,
+                obj.heading,
+                obj.kind,
+                obj.name,
+                obj.faction,
+                bool(getattr(obj, "moving", False)),
+                tuple(getattr(obj, "trail", ()) or ()),
+                bool(getattr(obj, "orient_radar", False)),
+                bool(obj.active),
+            )
+        if live != self._live_ids:
+            moved = True
+            for oid in self._live_ids - live:
+                self._pose.pop(oid, None)
+                self._stowed.pop(oid, None)
+            self._live_ids = live
+        self._pose_n = len(objects)
+        return moved
 
     def _remember(self, faction: str, source_id: str, now_sim: float) -> None:
         pose = self._pose.get(source_id)
@@ -282,6 +326,7 @@ class Perception:
             lookouts = None
         sat_for_faction = sat_on and faction == self.catalog.sat_faction
         cover = self.cover
+        nearby, reach = self._index_emitters(emitters, darkness)
         seen = list(own)
         for target in others:
             channels = self.catalog.detectable_by(target.kind)
@@ -291,7 +336,8 @@ class Perception:
                 target,
                 channels,
                 ground,
-                emitters,
+                nearby,
+                reach,
                 lookouts,
                 occupied,
                 sat_for_faction,
@@ -302,11 +348,35 @@ class Perception:
                 seen.append(target)
         return seen
 
+    def _index_emitters(
+        self,
+        emitters: list[tuple[GameObject, str]],
+        darkness: float,
+    ) -> tuple[UniformGrid, list[tuple[GameObject, str]]]:
+        grid = UniformGrid(EMITTER_CELL_M)
+        rows: list[tuple[GameObject, str]] = []
+        for src, channel in emitters:
+            radius = self.catalog.emitter_range_m(channel, src.kind)
+            if radius is None:
+                radius = self.catalog.default_range_m(channel)
+            if radius is None or radius <= 0.0:
+                continue
+            radius *= self.catalog.darkness_scale(channel, darkness)
+            if radius <= 0.0:
+                continue
+            i = len(rows)
+            rows.append((src, channel))
+            grid.insert(
+                i, src.x - radius, src.y - radius, src.x + radius, src.y + radius
+            )
+        return grid, rows
+
     def _detected(
         self,
         target: GameObject,
         channels: frozenset[str],
         cover: str,
+        nearby: UniformGrid,
         emitters: list[tuple[GameObject, str]],
         lookouts: IslandLookouts | None,
         occupied: set[int],
@@ -319,16 +389,10 @@ class Perception:
         if "satellite" in channels and sat_on:
             if self.catalog.cover_factor("satellite", cover) > 0.0:
                 return True
-        if lookouts is not None and "lookout" in channels:
-            radius = self.catalog.scaled_range_m("lookout", target.kind, darkness)
-            if radius is not None:
-                radius *= self.catalog.cover_factor("lookout", cover)
-                if radius > 0.0 and lookouts.distance_m(
-                    target.x, target.y, occupied, base=base, deny=deny
-                ) <= radius:
-                    return True
         tx, ty = target.x, target.y
-        for src, channel in emitters:
+        circles: list[tuple[float, float, float]] = []
+        for i in nearby.at(tx, ty):
+            src, channel = emitters[i]
             if channel not in channels:
                 continue
             radius = self.catalog.scaled_range_m(
@@ -339,6 +403,25 @@ class Perception:
             radius *= self.catalog.cover_factor(channel, cover)
             if radius <= 0.0:
                 continue
-            if hypot(src.x - tx, src.y - ty) <= radius:
+            circles.append((src.x, src.y, radius))
+        circles.sort(key=lambda row: row[2], reverse=True)
+        for sx, sy, radius in circles:
+            if hypot(sx - tx, sy - ty) <= radius:
                 return True
+        if lookouts is not None and "lookout" in channels:
+            radius = self.catalog.scaled_range_m("lookout", target.kind, darkness)
+            if radius is not None:
+                radius *= self.catalog.cover_factor("lookout", cover)
+                here = getattr(target, "island_id", None)
+                on_island = here() if callable(here) else None
+                if radius > 0.0 and lookouts.covers(
+                    tx,
+                    ty,
+                    radius,
+                    occupied,
+                    base=base,
+                    deny=deny,
+                    on_island=on_island,
+                ):
+                    return True
         return False

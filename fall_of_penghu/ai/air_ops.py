@@ -4,6 +4,7 @@ from math import atan2, cos, hypot, pi, sin
 from random import Random
 from typing import TYPE_CHECKING
 
+from fall_of_penghu.profile import slice_round_robin
 from fall_of_penghu.ai.china_util import (
     CARRIER_MAGAZINE,
     LAUNCH_SIM_S,
@@ -54,6 +55,7 @@ class AirOps:
         self._rng = Random(seed + 19)
         self._drone_n = 0
         self._carrier_n = 0
+        self._drone_i = 0
 
     def ensure_carrier(self, world: World) -> DynamicObject | None:
         hulls = _carriers(world)
@@ -119,8 +121,11 @@ class AirOps:
         ]
         load = _load_by_target(drones)
         with scope("air.steer"):
-            for drone in drones:
-                self._steer(world, drone, intel, now, load)
+            self._drone_i = slice_round_robin(
+                drones,
+                self._drone_i,
+                lambda drone: self._steer(world, drone, intel, now, load),
+            )
         with scope("air.launch"):
             self._step_carriers(world, intel, now, load)
 

@@ -14,7 +14,6 @@ if TYPE_CHECKING:
     from fall_of_penghu.world.world import World
 
 SITE_KINDS = frozenset({"port", "airfield", "seaport", "airport"})
-SHORE_M = 50.0
 
 
 class IslandControl:
@@ -92,11 +91,7 @@ class IslandControl:
 
 
 def _ground(world: World) -> dict[int, dict[str, int]]:
-    planner = world.entities.planner
     out: dict[int, dict[str, int]] = {}
-    if planner is None:
-        return out
-    islands = planner.land.islands
     for obj in world.entities.items:
         if not isinstance(obj, DynamicObject) or not obj.active:
             continue
@@ -104,9 +99,7 @@ def _ground(world: World) -> dict[int, dict[str, int]]:
             continue
         if obj.kind in SHOT_KINDS or is_static_kind(obj.kind):
             continue
-        iid = islands.at(obj.x, obj.y)
-        if iid is None:
-            iid = islands.nearest(obj.x, obj.y, SHORE_M)
+        iid = obj.island_id()
         if iid is None:
             continue
         row = out.setdefault(iid, {})

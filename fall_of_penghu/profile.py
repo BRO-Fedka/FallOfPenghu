@@ -52,24 +52,41 @@ class FrameProfiler:
         self._history: list[dict[str, float]] = []
         self.avg: dict[str, float] = {}
         self.panel = ProfPanel()
+        self._frame_t0 = 0.0
+        self._want_enabled: bool | None = None
 
     def toggle(self) -> None:
-        self.enabled = not self.enabled
+        # Defer so a scope already on the stack is not torn down mid-with.
+        if self._want_enabled is None:
+            self._want_enabled = not self.enabled
+        else:
+            self._want_enabled = not self._want_enabled
+
+    def begin_frame(self) -> None:
+        self._frame_t0 = perf_counter()
+        if self._want_enabled is not None:
+            self.enabled = self._want_enabled
+            self._want_enabled = None
         if not self.enabled:
             self._root = None
             self._stack = []
-
-    def begin_frame(self) -> None:
-        if not self.enabled:
             return
         self._root = ProfNode("frame")
         self._stack = [self._root]
 
+    def remaining_ms(self) -> float:
+        if self._frame_t0 <= 0.0:
+            return BUDGET_MS
+        return BUDGET_MS - (perf_counter() - self._frame_t0) * 1000.0
+
     def end_frame(self) -> None:
-        if not self.enabled or self._root is None:
-            self._root = None
+        if self._want_enabled is not None:
+            self.enabled = self._want_enabled
+            self._want_enabled = None
+        if self._root is None:
             self._stack = []
             return
+        self._root.total_ms = (perf_counter() - self._frame_t0) * 1000.0
         self.last = self._root
         flat = _flatten(self._root)
         self._history.append(flat)
@@ -93,14 +110,19 @@ class FrameProfiler:
 @contextmanager
 def _scope(prof: FrameProfiler, name: str):
     node = ProfNode(name)
-    prof._stack[-1].children.append(node)
+    if not prof._stack:
+        yield
+        return
+    parent = prof._stack[-1]
+    parent.children.append(node)
     prof._stack.append(node)
     t0 = perf_counter()
     try:
         yield
     finally:
         node.total_ms = (perf_counter() - t0) * 1000.0
-        prof._stack.pop()
+        if prof._stack and prof._stack[-1] is node:
+            prof._stack.pop()
 
 
 def _flatten(node: ProfNode, prefix: str = "") -> dict[str, float]:
@@ -130,13 +152,6 @@ def _sum_named(node: ProfNode | None, prefix: str) -> float:
     for child in node.children:
         total += _sum_named(child, prefix)
     return total
-
-
-prof = FrameProfiler()
-
-
-def scope(name: str):
-    return prof.scope(name)
 
 
 class ProfPanel:
@@ -268,3 +283,45 @@ def _row_color(
     if ms >= WARM_MS:
         return (230, 200, 90)
     return ink
+
+
+prof = FrameProfiler()
+
+
+def scope(name: str):
+    return prof.scope(name)
+
+
+def remaining_ms() -> float:
+    return prof.remaining_ms()
+
+
+# If the 16.7 ms frame is already spent, still use this much so a queue
+# of cheap units (~0.2 ms) yields about five per frame, not one.
+_OVER_BUDGET_SLICE_MS = 1.0
+
+
+def slice_round_robin(items, cursor: int, work) -> int:
+    """Round-robin `work(item)` from `cursor`. Always one unit.
+
+    More while leftover 16.7 ms frame time remains. If the frame is
+    already over budget, keep going for up to 1 ms. At most one full pass.
+    """
+    n = len(items)
+    if n <= 0:
+        return cursor
+    i = cursor % n
+    done = 0
+    leftover = prof.remaining_ms()
+    t0 = perf_counter()
+    while done < n:
+        if done >= 1:
+            if leftover > 0.0:
+                if prof.remaining_ms() <= 0.0:
+                    break
+            elif (perf_counter() - t0) * 1000.0 >= _OVER_BUDGET_SLICE_MS:
+                break
+        work(items[i])
+        done += 1
+        i = (i + 1) % n
+    return i

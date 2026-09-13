@@ -10,6 +10,17 @@ class UniformGrid:
         self.cell_m = cell_m
         self._cells: dict[tuple[int, int], list[int]] = defaultdict(list)
 
+    @classmethod
+    def from_cells(
+        cls, cell_m: float, cells: dict[tuple[int, int], list[int]]
+    ) -> UniformGrid:
+        grid = cls(cell_m)
+        grid._cells.update(cells)
+        return grid
+
+    def dump_cells(self) -> dict[tuple[int, int], list[int]]:
+        return dict(self._cells)
+
     def insert(self, index: int, minx: float, miny: float, maxx: float, maxy: float) -> None:
         c = self.cell_m
         x0 = int(minx // c)
@@ -20,6 +31,10 @@ class UniformGrid:
         for gx in range(x0, x1 + 1):
             for gy in range(y0, y1 + 1):
                 cells[gx, gy].append(index)
+
+    def at(self, x: float, y: float) -> list[int] | tuple[()]:
+        """Features whose bbox overlaps the cell that contains (x, y)."""
+        return self._cells.get((int(x // self.cell_m), int(y // self.cell_m)), ())
 
     def query(self, minx: float, miny: float, maxx: float, maxy: float) -> list[int]:
         c = self.cell_m

@@ -15,6 +15,7 @@ from fall_of_penghu.ai.china_util import (
 from fall_of_penghu.world.entities.command import SetRoute
 from fall_of_penghu.world.entities.dynamic import DynamicObject
 from fall_of_penghu.world.entities.game_object import FACTION_CHINA, FACTION_PLAYER
+from fall_of_penghu.profile import slice_round_robin
 from fall_of_penghu.world.entities.kinds import SHOT_KINDS, is_static_kind
 
 if TYPE_CHECKING:
@@ -25,6 +26,7 @@ if TYPE_CHECKING:
 INLAND_M = 450.0
 GROUND_REPATH_S = 25.0
 SWEEP_ARRIVE_M = 70.0
+ASSIGN_SIM_S = 0.35
 
 
 class GroundOps:
@@ -32,6 +34,11 @@ class GroundOps:
 
     def __init__(self, log: DecisionLog) -> None:
         self.log = log
+        self._hops: dict[str, tuple[float, float]] = {}
+        self._hop_dest: dict[str, int] = {}
+        self._assign_due: dict[int, float] = {}
+        self._assign_i = 0
+        self._repath_i = 0
 
     def step(self, world: World, intel: IntelOps) -> None:
         now = world.clock.simulation_time
@@ -44,10 +51,99 @@ class GroundOps:
         busy = world.transport.busy_ids()
         held = china_by_island(world)
         assault = None if intel.assault is None else intel.assault.island
-        with scope("ground.assign"):
-            hops = _assign_garrison(world, intel, held, assault, busy)
+        if world.clock.dt_sim > 0.0:
+            with scope("ground.assign"):
+                self._slice_assign(world, intel, held, assault, busy, now)
+        if world.clock.dt_sim <= 0.0:
+            return
         with scope("ground.repath"):
-            self._drive_units(world, intel, islands, busy, held, assault, hops, now)
+            self._drive_units(
+                world, intel, islands, busy, held, assault, self._hops, now
+            )
+
+    def _slice_assign(
+        self,
+        world: World,
+        intel: IntelOps,
+        held: dict[int, list[DynamicObject]],
+        assault: int | None,
+        busy: set[str],
+        now: float,
+    ) -> None:
+        dests = capture_islands(world, held=held)
+        want = set(dests)
+        for uid, iid in list(self._hop_dest.items()):
+            if iid in want:
+                continue
+            self._hops.pop(uid, None)
+            self._hop_dest.pop(uid, None)
+        due = [
+            iid
+            for iid in dests
+            if now - self._assign_due.get(iid, -1e9) >= ASSIGN_SIM_S
+        ]
+        if not due:
+            return
+        self._assign_i = slice_round_robin(
+            due,
+            self._assign_i,
+            lambda iid: self._assign_island(
+                world, intel, held, assault, busy, iid, now
+            ),
+        )
+
+    def _assign_island(
+        self,
+        world: World,
+        intel: IntelOps,
+        held: dict[int, list[DynamicObject]],
+        assault: int | None,
+        busy: set[str],
+        dest_iid: int,
+        now: float,
+    ) -> None:
+        self._assign_due[dest_iid] = now
+        for uid, iid in list(self._hop_dest.items()):
+            if iid != dest_iid:
+                continue
+            self._hops.pop(uid, None)
+            self._hop_dest.pop(uid, None)
+        taken = set(world.transport.inbound_kinds(dest_iid))
+        taken.update(_enroute_kinds(world, dest_iid))
+        used = set(self._hops)
+        for kind in ("infantry", "artillery"):
+            if kind in taken:
+                continue
+            dest = _garrison_stand(world, dest_iid, kind, intel)
+            if dest is None:
+                continue
+            pick = None
+            best_d = 1e30
+            for island, units in held.items():
+                if island == dest_iid or not islands_linked(world, island, dest_iid):
+                    continue
+                if island_has_foe(world, island):
+                    continue
+                for unit in units:
+                    if unit.id in busy or unit.id in used or unit.kind != kind:
+                        continue
+                    if not is_surplus(unit, island, assault, held, world):
+                        continue
+                    if (
+                        kind == "infantry"
+                        and not china_owned(world, island)
+                        and _forest_dest(unit, island, intel)
+                    ):
+                        continue
+                    d = hypot(unit.x - dest[0], unit.y - dest[1])
+                    if d < best_d:
+                        pick = unit
+                        best_d = d
+            if pick is None:
+                continue
+            self._hops[pick.id] = dest
+            self._hop_dest[pick.id] = dest_iid
+            used.add(pick.id)
 
     def _drive_units(
         self,
@@ -60,56 +156,72 @@ class GroundOps:
         hops,
         now: float,
     ) -> None:
-        for obj in world.entities.items:
-            if not isinstance(obj, DynamicObject):
-                continue
-            if not obj.active or obj.faction != FACTION_CHINA:
-                continue
-            if obj.mobility != "land" or obj.stowed:
-                continue
-            if obj.kind not in ("infantry", "tank", "artillery", "aa_pickup"):
-                continue
-            if obj.id in busy:
-                continue
-            if obj.task == "shuttle":
-                obj.task = ""
-            island = islands.at(obj.x, obj.y)
-            if island is None:
-                near = islands.nearest(obj.x, obj.y, 120.0)
-                if near is None:
-                    continue
-                island = near
-            last = float(getattr(obj, "task_sim", 0.0) or 0.0)
-            if obj.kind == "artillery" and obj.task == "deployed":
-                if not is_surplus(obj, island, assault, held, world):
-                    continue
-                obj.task = ""
-            if obj.moving and now - last < GROUND_REPATH_S:
-                continue
-            dest = _push_dest(world, obj, island, intel, hops.get(obj.id))
-            if dest is None:
-                continue
-            if hypot(dest[0] - obj.x, dest[1] - obj.y) < 40.0:
-                if obj.kind == "artillery":
-                    obj.task = "deployed"
-                    obj.route = None
-                continue
-            world.entities.dispatch(
-                SetRoute(object_id=obj.id, mode="auto", target=dest),
-                as_faction=FACTION_CHINA,
+        units = [
+            obj
+            for obj in world.entities.items
+            if isinstance(obj, DynamicObject)
+            and obj.active
+            and obj.faction == FACTION_CHINA
+            and obj.mobility == "land"
+            and not obj.stowed
+            and obj.kind in ("infantry", "tank", "artillery", "aa_pickup")
+            and obj.id not in busy
+        ]
+        self._repath_i = slice_round_robin(
+            units,
+            self._repath_i,
+            lambda obj: self._drive_one(
+                world, obj, intel, busy, held, assault, hops, now
+            ),
+        )
+
+    def _drive_one(
+        self,
+        world: World,
+        obj: DynamicObject,
+        intel: IntelOps,
+        busy,
+        held,
+        assault,
+        hops,
+        now: float,
+    ) -> None:
+        if obj.task == "shuttle":
+            obj.task = ""
+        island = obj.island_id()
+        if island is None:
+            return
+        last = float(getattr(obj, "task_sim", 0.0) or 0.0)
+        if obj.kind == "artillery" and obj.task == "deployed":
+            if not is_surplus(obj, island, assault, held, world):
+                return
+            obj.task = ""
+        if obj.moving and now - last < GROUND_REPATH_S:
+            return
+        dest = _push_dest(world, obj, island, intel, hops.get(obj.id))
+        if dest is None:
+            return
+        if hypot(dest[0] - obj.x, dest[1] - obj.y) < 40.0:
+            if obj.kind == "artillery":
+                obj.task = "deployed"
+                obj.route = None
+            return
+        world.entities.dispatch(
+            SetRoute(object_id=obj.id, mode="auto", target=dest),
+            as_faction=FACTION_CHINA,
+        )
+        first = last <= 0.0
+        obj.task_sim = now
+        if hops.get(obj.id) is not None:
+            obj.task = "garrison"
+        elif obj.kind == "artillery":
+            obj.task = "deploying"
+        if first:
+            self.log.emit(
+                now,
+                "ground",
+                f"{obj.id} {obj.kind} -> {dest[0]:.0f},{dest[1]:.0f}",
             )
-            first = last <= 0.0
-            obj.task_sim = now
-            if hops.get(obj.id) is not None:
-                obj.task = "garrison"
-            elif obj.kind == "artillery":
-                obj.task = "deploying"
-            if first:
-                self.log.emit(
-                    now,
-                    "ground",
-                    f"{obj.id} {obj.kind} -> {dest[0]:.0f},{dest[1]:.0f}",
-                )
 
 
 def _push_dest(
@@ -142,7 +254,7 @@ def _push_dest(
         return _inland(planner, unit, island)
     other = _nearest_foe(world, unit, None)
     if other is not None:
-        oid = world.entities.planner.land.islands.at(other.x, other.y)
+        oid = other.island_id() if isinstance(other, DynamicObject) else None
         if oid is not None and islands_linked(world, island, oid):
             return (other.x, other.y)
     sweep = _sweep_cell(world, unit, island, intel)
@@ -152,53 +264,6 @@ def _push_dest(
         if islands_linked(world, island, intel.assault.island):
             return (intel.assault.x, intel.assault.y)
     return _inland(planner, unit, island)
-
-
-def _assign_garrison(
-    world: World,
-    intel: IntelOps,
-    held: dict[int, list[DynamicObject]],
-    assault: int | None,
-    busy: set[str],
-) -> dict[str, tuple[float, float]]:
-    orders: dict[str, tuple[float, float]] = {}
-    used: set[str] = set()
-    for dest_iid in capture_islands(world):
-        taken = set(world.transport.inbound_kinds(dest_iid))
-        taken.update(_enroute_kinds(world, dest_iid))
-        for kind in ("infantry", "artillery"):
-            if kind in taken:
-                continue
-            pick = None
-            best_d = 1e30
-            dest = _garrison_stand(world, dest_iid, kind, intel)
-            if dest is None:
-                continue
-            for island, units in held.items():
-                if island == dest_iid or not islands_linked(world, island, dest_iid):
-                    continue
-                if island_has_foe(world, island):
-                    continue
-                for unit in units:
-                    if unit.id in busy or unit.id in used or unit.kind != kind:
-                        continue
-                    if not is_surplus(unit, island, assault, held, world):
-                        continue
-                    if (
-                        kind == "infantry"
-                        and not china_owned(world, island)
-                        and _forest_dest(unit, island, intel)
-                    ):
-                        continue
-                    d = hypot(unit.x - dest[0], unit.y - dest[1])
-                    if d < best_d:
-                        pick = unit
-                        best_d = d
-            if pick is None:
-                continue
-            orders[pick.id] = dest
-            used.add(pick.id)
-    return orders
 
 
 def _garrison_stand(
@@ -321,7 +386,7 @@ def _nearest_foe(world: World, unit: DynamicObject, island: int | None):
             continue
         if obj.kind in ("ferry", "ship", "landing_ship", "drone_carrier", "drone", "scout"):
             continue
-        at = islands.at(obj.x, obj.y)
+        at = obj.island_id() if isinstance(obj, DynamicObject) else islands.at(obj.x, obj.y)
         if at is None:
             continue
         if island is not None and at != island:

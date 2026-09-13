@@ -29,6 +29,7 @@ Thumbs.db
 # Local runtime data
 saves/
 logs/
+**/sim_bake.pkl
 *.log
 output/*.pkl
 output/*.npz

@@ -54,6 +54,8 @@ class Hud:
         self._panel_h = PANEL_H
         self._icons = IconStore()
         self._port_buttons: list[tuple[pygame.Rect, str]] = []
+        self._side_sig: tuple | None = None
+        self._side_cache: list[tuple[pygame.Surface, tuple[int, int]]] = []
 
     def hits_chrome(
         self,
@@ -533,15 +535,53 @@ class Hud:
         screen_h,
         debug,
     ) -> None:
+        mx, my = mouse_screen
+        inset = DEBUG_H if debug else FPS_H
+        over = bool(
+            (chat is not None and chat.hits(mx, my, screen_w, screen_h, inset))
+            or (debug and palette is not None and palette.hits(mx, my))
+            or (engage is not None and engage.hits(mx, my, selection, entities))
+            or (vision is not None and vision.hits(mx, my))
+            or (ranges is not None and ranges.hits(mx, my))
+            or (display is not None and display.hits(mx, my))
+        )
+        sig = (
+            screen_w,
+            screen_h,
+            debug,
+            ink,
+            len(chat.messages) if chat is not None else 0,
+            chat.messages[-1].text if chat is not None and chat.messages else "",
+            frozenset(selection.selected) if selection is not None else frozenset(),
+            None if selection is None else selection.port_cmd,
+            None if vision is None else (vision.x, vision.y, frozenset(vision.enabled)),
+            None if ranges is None else (ranges.x, ranges.y, frozenset(ranges.enabled)),
+            None
+            if display is None
+            else (display.x, display.y, frozenset(display.enabled), tuple(display._open.items())),
+            None
+            if engage is None
+            else (engage.x, engage.y, tuple(engage._open.items())),
+            None
+            if palette is None
+            else (palette.x, palette.y, palette.kind, palette.faction),
+        )
+        if (
+            not over
+            and sig == self._side_sig
+            and self._side_cache
+        ):
+            for surf, pos in self._side_cache:
+                renderer.overlay(surf, pos)
+            return
+        buf = _OverlayBuf(renderer)
         if chat is not None:
-            inset = DEBUG_H if debug else FPS_H
-            self._blit_chat(renderer, chat, ink, screen_w, screen_h, inset)
-
+            self._blit_chat(buf, chat, ink, screen_w, screen_h, inset)
         if debug and palette is not None:
-            palette.blit(renderer, mouse_screen, ink, screen_w, screen_h)
+            palette.blit(buf, mouse_screen, ink, screen_w, screen_h)
         if engage is not None:
             engage.blit(
-                renderer,
+                buf,
                 mouse_screen,
                 ink,
                 selection,
@@ -551,11 +591,13 @@ class Hud:
                 screen_h,
             )
         if vision is not None:
-            vision.blit(renderer, mouse_screen, ink, screen_w, screen_h)
+            vision.blit(buf, mouse_screen, ink, screen_w, screen_h)
         if ranges is not None:
-            ranges.blit(renderer, mouse_screen, ink, screen_w, screen_h)
+            ranges.blit(buf, mouse_screen, ink, screen_w, screen_h)
         if display is not None:
-            display.blit(renderer, mouse_screen, ink, screen_w, screen_h)
+            display.blit(buf, mouse_screen, ink, screen_w, screen_h)
+        self._side_sig = sig
+        self._side_cache = buf.parts
 
     def _blit_port_menu(
         self,
@@ -656,6 +698,18 @@ class Hud:
             )
             y += LINE_H
         renderer.overlay(surf, (panel.x, panel.y))
+
+
+class _OverlayBuf:
+    """Replay last side-panel surfaces when selection and chat are unchanged."""
+
+    def __init__(self, inner) -> None:
+        self.inner = inner
+        self.parts: list[tuple[pygame.Surface, tuple[int, int]]] = []
+
+    def overlay(self, surf, pos) -> None:
+        self.parts.append((surf, pos))
+        self.inner.overlay(surf, pos)
 
 
 def _selection_ammo(

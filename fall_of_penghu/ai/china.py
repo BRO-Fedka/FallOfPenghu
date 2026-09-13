@@ -22,6 +22,8 @@ class ChinaDirector:
         self.air.ensure_carrier(world)
 
     def step(self, world: World) -> None:
+        if world.clock.dt_sim <= 0.0:
+            return
         with scope("intel"):
             self.intel.step(world)
         with scope("air"):

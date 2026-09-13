@@ -403,7 +403,7 @@
     }
   },
   "lookout": {
-    "simplify_m": 20.0
+    "simplify_m": 50.0
   },
   "satellite_windows": {
     "faction": "C",

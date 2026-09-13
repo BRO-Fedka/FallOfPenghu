@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 
 from fall_of_penghu.ai.coverage import ForestCoverage
 from fall_of_penghu.ai.heatmap import BeachPick, IslandHeatmaps
-from fall_of_penghu.profile import scope
+from fall_of_penghu.profile import scope, slice_round_robin
 from fall_of_penghu.world.entities.command import SetRoute
 from fall_of_penghu.world.entities.dynamic import DynamicObject
 from fall_of_penghu.world.entities.game_object import FACTION_CHINA, FACTION_PLAYER
@@ -37,6 +37,7 @@ STAGE_M = 6_000.0
 THEATRE_M = 18_000.0
 GROUND_FOLLOW = frozenset({"infantry", "artillery", "tank", "truck"})
 GROUND_AA = frozenset({"aaw", "aa_pickup"})
+BOOK_SIM_S = 0.35
 Ring = tuple[float, float, float]
 
 
@@ -62,6 +63,13 @@ class IntelOps:
         self._pose: dict[str, tuple[float, float]] = {}
         self._now = 0.0
         self._block_sim = -1e9
+        self._scout_i = 0
+        self._land_key: tuple | None = None
+        self._book_sim = -1e9
+        self._rings: list[Ring] = []
+        self._posts: list[tuple[float, float]] = []
+        self._loop: tuple[tuple[float, float], ...] = ()
+        self._claimed: dict[str, str] = {}
 
     def bake(self, world: World) -> None:
         self.heat.bake(world)
@@ -72,6 +80,18 @@ class IntelOps:
         if len(self._circuit) == 1:
             self._circuit = self._circuit + self._circuit
         self._baked = True
+        self._land_key = None
+        if getattr(world, "sim_bake", None) is None:
+            from fall_of_penghu.world.map_bake import MapBake
+
+            cover = world.perception.cover
+            lookouts = world.perception.lookouts
+            if cover is not None and lookouts is not None:
+                print("Writing sim bake…", flush=True)
+                world.sim_bake = MapBake.capture(
+                    world, cover, lookouts, self.heat, self.forest
+                )
+                world.sim_bake.save(world)
 
     def step(self, world: World) -> None:
         self._now = world.clock.simulation_time
@@ -79,12 +99,20 @@ class IntelOps:
             with scope("intel.bake"):
                 self.bake(world)
         with scope("heat.refresh"):
-            self.heat.refresh(world)
+            refreshed = self.heat.refresh(world)
         with scope("forest.mark"):
             self.forest.mark(world)
         prev = None if self.assault is None else self.assault.island
-        with scope("heat.pick_landing"):
-            self.assault = self.heat.pick_landing(world)
+        if refreshed:
+            key = (
+                self.heat._ember_sig,
+                frozenset(world.control.china_islands()),
+                frozenset(world.perception.china_held),
+            )
+            if key != self._land_key:
+                self._land_key = key
+                with scope("heat.pick_landing"):
+                    self.assault = self.heat.pick_landing(world)
         if self.assault is None:
             if prev is not None:
                 self.log.emit(world.clock.simulation_time, "assault", "hold — all beaches hot")
@@ -112,38 +140,43 @@ class IntelOps:
         with scope("scouts.bookkeeping"):
             self._note_deaths(world, scouts, now, catalog)
             scouts = self._cull_scouts(world, cap)
-            rings = _aa_rings(world, self._kills, now)
-            self._air_debt(rings)
-            claimed = _follow_claimed(scouts)
-            posts = _cluster_posts(world, catalog, rings, self, claimed) if dusk else []
+            self._claimed = _follow_claimed(scouts)
+            if now - self._book_sim >= BOOK_SIM_S:
+                self._book_sim = now
+                self._rings = _aa_rings(world, self._kills, now)
+                self._air_debt(self._rings)
+                self._posts = (
+                    _cluster_posts(world, catalog, self._rings, self, self._claimed)
+                    if dusk
+                    else []
+                )
+                self._loop = _reachable_loop(self._sweeps, self._rings, self) or self._circuit
+                watch, free = _split_watch(scouts)
+                _patrol, search = _split_roles(free, n_patrol)
+                self._hand_off(world, search, self._claimed, now, self._rings)
+        rings = self._rings
+        posts = self._posts
+        claimed = self._claimed
         used_posts: set[int] = set()
         watch, free = _split_watch(scouts)
         patrol, search = _split_roles(free, n_patrol)
         _bind_slots(patrol, n_patrol)
         _bind_slots(search, max(1, n_search))
-        loop = _reachable_loop(self._sweeps, rings, self) or self._circuit
-        self._hand_off(world, search, claimed, now, rings)
+        if dusk and posts:
+            _claim_held_posts(scouts, posts, used_posts)
+        loop = self._loop or self._circuit
+        jobs: list[tuple[str, DynamicObject]] = (
+            [("watch", scout) for scout in watch]
+            + [("patrol", scout) for scout in patrol]
+            + [("search", scout) for scout in search]
+        )
         with scope("scouts.drive"):
-            for scout in watch:
-                self._drive_search(
-                    world, scout, now, dusk, max(0, _slot_of(scout)), n_search,
-                    posts, used_posts, claimed, rings,
+            self._scout_i = slice_round_robin(
+                jobs, self._scout_i, lambda job: self._drive_one(
+                    world, job, now, dusk, n_patrol, n_search,
+                    posts, used_posts, claimed, rings, loop,
                 )
-            for scout in patrol:
-                self._drive_circuit(world, scout, now, rings, loop, n_patrol)
-            for scout in search:
-                slot = max(0, _slot_of(scout))
-                self._drive_search(
-                    world, scout, now, dusk, slot, n_search, posts, used_posts, claimed, rings
-                )
-                self._jobs[scout.id] = {
-                    "role": "search",
-                    "slot": slot,
-                    "sweep_k": int(getattr(scout, "sweep_k", 0) or 0),
-                    "follow_id": scout.strike_id if scout.task == "follow" else None,
-                }
-                if scout.task != "follow":
-                    self._progress[slot] = int(getattr(scout, "sweep_k", 0) or 0)
+            )
         for scout in watch:
             self._jobs[scout.id] = {
                 "role": "follow",
@@ -151,6 +184,16 @@ class IntelOps:
                 "sweep_k": int(getattr(scout, "sweep_k", 0) or 0),
                 "follow_id": scout.strike_id,
             }
+        for scout in search:
+            slot = max(0, _slot_of(scout))
+            self._jobs[scout.id] = {
+                "role": "search",
+                "slot": slot,
+                "sweep_k": int(getattr(scout, "sweep_k", 0) or 0),
+                "follow_id": scout.strike_id if scout.task == "follow" else None,
+            }
+            if scout.task != "follow":
+                self._progress[slot] = int(getattr(scout, "sweep_k", 0) or 0)
         if now < self._scout_ready_sim:
             return
         with scope("scouts.launch"):
@@ -403,6 +446,37 @@ class IntelOps:
             f"keep {len(keep) + len(watch)} drop {len(drop)}",
         )
         return watch + keep
+
+    def _drive_one(
+        self,
+        world: World,
+        job: tuple[str, DynamicObject],
+        now: float,
+        dusk: bool,
+        n_patrol: int,
+        n_search: int,
+        posts: list[tuple[float, float]],
+        used_posts: set[int],
+        claimed: dict[str, str],
+        rings: list[Ring],
+        loop: tuple[tuple[float, float], ...],
+    ) -> None:
+        role, scout = job
+        if role == "patrol":
+            self._drive_circuit(world, scout, now, rings, loop, n_patrol)
+            return
+        self._drive_search(
+            world,
+            scout,
+            now,
+            dusk,
+            max(0, _slot_of(scout)),
+            n_search,
+            posts,
+            used_posts,
+            claimed,
+            rings,
+        )
 
     def _drive_circuit(
         self,
@@ -813,6 +887,24 @@ def _cluster_posts(
         drop = set(best_cover)
         left = [j for j in left if j not in drop]
     return posts
+
+
+def _claim_held_posts(
+    scouts: list[DynamicObject],
+    posts: list[tuple[float, float]],
+    used: set[int],
+) -> None:
+    """Mark dusk posts already occupied so a sliced tick cannot steal them."""
+    for scout in scouts:
+        current = getattr(scout, "patrol_xy", None)
+        if scout.task != "watch" or current is None:
+            continue
+        for i, cand in enumerate(posts):
+            if i in used:
+                continue
+            if hypot(current[0] - cand[0], current[1] - cand[1]) < 250.0:
+                used.add(i)
+                break
 
 
 def _take_post(

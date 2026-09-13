@@ -59,6 +59,8 @@ MIN_ROAD_WIDTH_M = 2.0
 PIER_FIELD_NAME = "piers_field.npz"
 FIELD_CACHE_NAME = "gl_fields_v1.npz"
 SDF_TEX_MAX_DIM = 4096
+RING_HALF_PX = 0.5
+RING_VERT_BYTES = 20
 
 
 def _poly_groups(world: MapData):
@@ -104,6 +106,29 @@ def _concat(chunks: list[array]) -> array:
         if chunk:
             out.extend(chunk)
     return out
+
+
+def _ring_hits_view(
+    cx: float, cy: float, radius: float, pad: float, screen_w: int, screen_h: int
+) -> bool:
+    outer = radius + pad
+    if cx + outer < 0.0 or cy + outer < 0.0:
+        return False
+    if cx - outer > screen_w or cy - outer > screen_h:
+        return False
+    x0, y0 = 0.0, 0.0
+    x1, y1 = float(screen_w), float(screen_h)
+    dx = 0.0 if x0 <= cx <= x1 else (x0 - cx if cx < x0 else cx - x1)
+    dy = 0.0 if y0 <= cy <= y1 else (y0 - cy if cy < y0 else cy - y1)
+    dmin = hypot(dx, dy)
+    dmax = max(
+        hypot(cx - x0, cy - y0),
+        hypot(cx - x1, cy - y0),
+        hypot(cx - x0, cy - y1),
+        hypot(cx - x1, cy - y1),
+    )
+    inner = max(0.0, radius - pad)
+    return dmin <= outer and dmax >= inner
 
 
 def _ring_xy_closed(coords) -> list[tuple[float, float]]:
@@ -405,6 +430,10 @@ class GLMapRenderer:
             vertex_shader=_shader("radar_line.vert"),
             fragment_shader=_shader("radar_line.frag"),
         )
+        self.prog_ring = ctx.program(
+            vertex_shader=_shader("ring.vert"),
+            fragment_shader=_shader("ring.frag"),
+        )
         self.prog_veg = None
         self.prog_veg_grass = None
         if VEG_DETAIL_CROWNS:
@@ -483,6 +512,11 @@ class GLMapRenderer:
         self._overlay_fill_vbo = ctx.buffer(reserve=256, dynamic=True)
         self._overlay_fill_vao = ctx.vertex_array(
             self.prog_overlay_fill, [(self._overlay_fill_vbo, "2f", "in_pos")]
+        )
+        self._ring_vbo = ctx.buffer(reserve=6 * RING_VERT_BYTES * 16, dynamic=True)
+        self._ring_vao = ctx.vertex_array(
+            self.prog_ring,
+            [(self._ring_vbo, "2f 2f 1f", "in_pos", "in_center", "in_radius")],
         )
         self._overlay_tex_cache: dict[tuple[int, int], object] = {}
         self._fbo_tex = None
@@ -1981,6 +2015,64 @@ class GLMapRenderer:
             (r / 255.0, g / 255.0, b / 255.0, a),
         )
         self._overlay_fill_vao.render(mode=self.mgl.TRIANGLES, vertices=nverts)
+        self.ctx.disable(self.mgl.BLEND)
+
+    def overlay_rings(
+        self,
+        rings: list[tuple[float, float, float]],
+        color: tuple[int, int, int] | tuple[int, int, int, int],
+        camera: Camera,
+        screen_w: int,
+        screen_h: int,
+    ) -> None:
+        pad = RING_HALF_PX + 1.5
+        mpp = camera.meters_per_pixel(screen_w)
+        verts = array("f")
+        nverts = 0
+        for wx, wy, radius in rings:
+            if radius <= 1.0:
+                continue
+            cx, cy = camera.world_to_screen(wx, wy, screen_w, screen_h)
+            r_px = radius / max(mpp, 1e-6)
+            if not _ring_hits_view(cx, cy, r_px, pad, screen_w, screen_h):
+                continue
+            x0 = max(-pad, cx - r_px - pad)
+            y0 = max(-pad, cy - r_px - pad)
+            x1 = min(float(screen_w) + pad, cx + r_px + pad)
+            y1 = min(float(screen_h) + pad, cy + r_px + pad)
+            if x1 <= x0 or y1 <= y0:
+                continue
+            verts.extend(
+                (
+                    x0, y0, cx, cy, r_px,
+                    x1, y0, cx, cy, r_px,
+                    x1, y1, cx, cy, r_px,
+                    x0, y0, cx, cy, r_px,
+                    x1, y1, cx, cy, r_px,
+                    x0, y1, cx, cy, r_px,
+                )
+            )
+            nverts += 6
+        if nverts <= 0:
+            return
+        nbytes = nverts * RING_VERT_BYTES
+        if nbytes > self._ring_vbo.size:
+            self._ring_vbo.release()
+            self._ring_vbo = self.ctx.buffer(reserve=nbytes, dynamic=True)
+            self._ring_vao = self.ctx.vertex_array(
+                self.prog_ring,
+                [(self._ring_vbo, "2f 2f 1f", "in_pos", "in_center", "in_radius")],
+            )
+        self._ring_vbo.write(verts.tobytes())
+        r, g, b = color[0], color[1], color[2]
+        # aaline ignored the alpha channel; keep the stroke solid and AA the edge.
+        self.ctx.enable(self.mgl.BLEND)
+        _set_uniform(
+            self.prog_ring, "u_screen", (float(screen_w), float(screen_h))
+        )
+        _set_uniform(self.prog_ring, "u_color", (r / 255.0, g / 255.0, b / 255.0, 1.0))
+        _set_uniform(self.prog_ring, "u_half_width", RING_HALF_PX)
+        self._ring_vao.render(mode=self.mgl.TRIANGLES, vertices=nverts)
         self.ctx.disable(self.mgl.BLEND)
 
     def present(self) -> None:

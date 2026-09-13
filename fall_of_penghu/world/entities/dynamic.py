@@ -67,6 +67,11 @@ class DynamicObject(GameObject):
         self.xfer_frac: float = 0.0
         self.task = ""
 
+    def island_id(self) -> int | None:
+        if self.stowed or self.ground != "island":
+            return None
+        return self.ground_id if isinstance(self.ground_id, int) else None
+
     @property
     def moving(self) -> bool:
         if self.kind == "intercept":

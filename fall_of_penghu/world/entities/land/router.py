@@ -48,6 +48,9 @@ class LandRouter:
     def bind_bridges(self, sites: list[GameObject]) -> None:
         self._book.bind_sites(sites)
 
+    def crossing(self, oid: str):
+        return self._book.by_id(oid)
+
     def connected(self, src: int, dst: int, intact: Intact) -> bool:
         """True if intact bridges join the two islands (or they are the same)."""
         return self._island_hops(src, dst, intact) is not None

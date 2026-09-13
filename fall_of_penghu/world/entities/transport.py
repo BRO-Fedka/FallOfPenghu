@@ -888,6 +888,8 @@ def _stow(ferry: DynamicObject, cargo: DynamicObject) -> None:
     cargo.stowed = True
     cargo.route = None
     cargo.doctrine = "hold"
+    cargo.ground = None
+    cargo.ground_id = None
     ferry.cargo_id = cargo.id
     cargo.x, cargo.y = ferry.x, ferry.y
 
@@ -916,12 +918,14 @@ def _drop_on_road(world: World, cargo: DynamicObject, near: tuple[float, float])
     planner = world.entities.planner
     if planner is None:
         cargo.x, cargo.y = near
+        world.entities.bind_ground(cargo)
         return
     spot = planner.land.nearest_road_point(near[0], near[1])
     if spot is None:
         cargo.x, cargo.y = near
-        return
-    cargo.x, cargo.y = spot
+    else:
+        cargo.x, cargo.y = spot
+    world.entities.bind_ground(cargo)
 
 
 def _place_on_beach(
@@ -931,6 +935,7 @@ def _place_on_beach(
     planner = world.entities.planner
     if planner is None:
         cargo.x, cargo.y = hint
+        world.entities.bind_ground(cargo)
         return
     island = planner.land.islands.at(*hint)
     shore = hint
@@ -941,11 +946,13 @@ def _place_on_beach(
         else:
             island = planner.land.islands.nearest(hint[0], hint[1], 800.0)
             if island is None:
+                world.entities.bind_ground(cargo)
                 return
             coast = planner.land.islands.coast_point(
                 hint[0], hint[1], island=island
             )
             if coast is None:
+                world.entities.bind_ground(cargo)
                 return
             island, shore = coast
     else:
@@ -953,6 +960,7 @@ def _place_on_beach(
         if coast is not None:
             shore = coast[1]
     cargo.x, cargo.y = _beach_stand(planner, island, shore)
+    world.entities.bind_ground(cargo)
 
 
 def _nudge_land(planner, island: int, pt: tuple[float, float]) -> tuple[float, float]:

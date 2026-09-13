@@ -26,6 +26,13 @@ class Route:
                 return oid
         return None
 
+    def bridge_leaving(self, s: float, ds: float) -> str | None:
+        nxt = s + max(ds, 0.0)
+        for start, end, oid in self.bridges:
+            if s < end <= nxt:
+                return oid
+        return None
+
     def __post_init__(self) -> None:
         if len(self.points) < 2:
             raise ValueError("route needs at least two points")

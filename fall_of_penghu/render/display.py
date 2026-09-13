@@ -44,6 +44,15 @@ class MapRenderer(Protocol):
         color: tuple[int, int, int] | tuple[int, int, int, int],
     ) -> None: ...
 
+    def overlay_rings(
+        self,
+        rings: list[tuple[float, float, float]],
+        color: tuple[int, int, int] | tuple[int, int, int, int],
+        camera: Camera,
+        screen_w: int,
+        screen_h: int,
+    ) -> None: ...
+
     def present(self) -> None: ...
 
 

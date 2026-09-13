@@ -29,6 +29,7 @@ from fall_of_penghu.ai.china_util import (
     standoff_slot,
 )
 from fall_of_penghu.world.entities.dynamic import DynamicObject
+from fall_of_penghu.profile import slice_round_robin
 from fall_of_penghu.world.entities.game_object import FACTION_CHINA, FACTION_PLAYER
 
 if TYPE_CHECKING:
@@ -38,6 +39,7 @@ if TYPE_CHECKING:
 
 CARGO_KINDS = ("infantry", "artillery", "tank")
 OCCUPY_RETRY_S = 900.0
+OCCUPY_CHECK_S = 0.35
 MAX_OCCUPY = 2
 STAGE_OFF_M = 2_500.0
 ABREAST_M = 600.0
@@ -56,6 +58,11 @@ class NavalOps:
         self._beach_i = 0
         self._occupy_sim: dict[int, float] = {}
         self._occupy_ids: set[str] = set()
+        self._occupy_due: dict[int, float] = {}
+        self._occupy_i = 0
+        self._hop_i = 0
+        self._ship_i = 0
+        self._reload_sim = -1e9
         self.axis = "west"
 
     def step(self, world: World, intel: IntelOps) -> None:
@@ -69,11 +76,17 @@ class NavalOps:
         with scope("naval.hops"):
             self._drive_hops(world, intel)
         with scope("naval.reload"):
-            self._drive_reloading(world, intel, ships)
+            now = world.clock.simulation_time
+            if now - self._reload_sim >= OCCUPY_CHECK_S:
+                self._reload_sim = now
+                self._drive_reloading(world, intel, ships)
         with scope("naval.ships"):
             active = _assault_ships(world, ships)
-            for ship in ships:
-                self._step_ship(world, ship, intel, ships, active)
+            self._ship_i = slice_round_robin(
+                ships,
+                self._ship_i,
+                lambda ship: self._step_ship(world, ship, intel, ships, active),
+            )
 
     def _spawn_landing_ships(self, world: World) -> None:
         now = world.clock.simulation_time
@@ -136,26 +149,37 @@ class NavalOps:
         }
         if len(self._occupy_ids) >= MAX_OCCUPY:
             return
-        for iid in capture_islands(world):
+        due = []
+        for iid in capture_islands(world, held=held):
             if iid not in inhabited or held.get(iid) or china_owned(world, iid):
-                continue
-            if island_has_foe(world, iid):
                 continue
             if now - self._occupy_sim.get(iid, -1e9) < OCCUPY_RETRY_S:
                 continue
-            if "infantry" in world.transport.inbound_kinds(iid):
+            if now - self._occupy_due.get(iid, -1e9) < OCCUPY_CHECK_S:
                 continue
+            due.append(iid)
+        if not due:
+            return
+
+        def _check(iid: int) -> None:
+            self._occupy_due[iid] = now
+            if len(self._occupy_ids) >= MAX_OCCUPY:
+                return
+            if island_has_foe(world, iid):
+                return
+            if "infantry" in world.transport.inbound_kinds(iid):
+                return
             beach = _island_beach(world, iid)
             if beach is None:
-                continue
+                return
             boat = self._send_squad(world, ships, beach)
             if boat is None:
-                continue
+                return
             self._occupy_sim[iid] = now
             self._occupy_ids.add(boat)
             self.log.emit(now, "occupy", f"island {iid} quiet — {boat} takes a squad")
-            if len(self._occupy_ids) >= MAX_OCCUPY:
-                return
+
+        self._occupy_i = slice_round_robin(due, self._occupy_i, _check)
 
     def _send_squad(
         self, world: World, ships: list[DynamicObject], beach: tuple[float, float]
@@ -200,21 +224,20 @@ class NavalOps:
         ]
         if not idle:
             return
-        need = capture_islands(world)
+        held = china_by_island(world)
+        need = capture_islands(world, held=held)
         if not need:
             return
         busy = world.transport.busy_ids()
-        held = china_by_island(world)
         assault = None if intel.assault is None else intel.assault.island
         now = world.clock.simulation_time
-        planner = world.entities.planner
-        if planner is None:
+        if world.entities.planner is None:
             return
-        islands = planner.land.islands
-        for dest_iid in need:
+
+        def _hop(dest_iid: int) -> None:
             dest = _garrison_point(world, dest_iid, intel)
             if dest is None:
-                continue
+                return
             inbound = world.transport.inbound_kinds(dest_iid)
             sent = 0
             for kind in ("infantry", "artillery"):
@@ -223,9 +246,7 @@ class NavalOps:
                 unit = _surplus_unit(world, held, assault, dest_iid, kind, busy)
                 if unit is None:
                     continue
-                here = islands.at(unit.x, unit.y)
-                if here is None:
-                    here = islands.nearest(unit.x, unit.y, 120.0)
+                here = unit.island_id()
                 if here is not None and islands_linked(world, here, dest_iid):
                     continue
                 ferry = min(
@@ -235,7 +256,7 @@ class NavalOps:
                     ferry, unit, dest, unload_sim=ASSAULT_UNLOAD_SIM
                 ):
                     continue
-                idle = [boat for boat in idle if boat.id != ferry.id]
+                idle[:] = [boat for boat in idle if boat.id != ferry.id]
                 busy.add(unit.id)
                 busy.add(ferry.id)
                 sent += 1
@@ -244,6 +265,8 @@ class NavalOps:
                     "shuttle",
                     f"{ferry.id} {unit.kind}:{unit.id} -> island {dest_iid}",
                 )
+
+        self._hop_i = slice_round_robin(need, self._hop_i, _hop)
 
     def _drive_reloading(
         self, world: World, intel: IntelOps, ships: list[DynamicObject]
@@ -595,8 +618,8 @@ def _next_beach(
     assault = intel.assault
     if assault is None:
         return None
-    empty = capture_islands(world)
     held = china_by_island(world)
+    empty = capture_islands(world, held=held)
     assault_n = len(held.get(assault.island, ()))
     if empty and assault_n >= 4 and index % 4 == 3:
         iid = empty[(index // 4) % len(empty)]

@@ -35,11 +35,17 @@ class World:
         self.control = IslandControl()
         self.entities._view = self.perception.visible_objects
         self.notices: list[ContactNotice] = []
+        self.sim_bake = None
 
     @classmethod
     def load(cls, map_dir: Path) -> World:
+        from fall_of_penghu.world.map_bake import MapBake
+
         map_dir = Path(map_dir)
         world = cls(load_map(map_dir))
+        world.sim_bake = MapBake.try_load(world)
+        if world.sim_bake is not None:
+            print("Sim bake cache hit", flush=True)
         world.entities.populate(world.map)
         world.perception.bind_map(world)
         world.entities.bind_motion(world.catalog, world.perception.cover)

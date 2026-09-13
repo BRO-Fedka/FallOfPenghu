@@ -179,8 +179,44 @@ class SoftwareMapRenderer:
             for a, b in zip(points, points[1:]):
                 pygame.draw.aaline(self.surface, rgb, a, b, 1)
 
+    def overlay_rings(
+        self,
+        rings: list[tuple[float, float, float]],
+        color: tuple[int, int, int] | tuple[int, int, int, int],
+        camera: Camera,
+        screen_w: int,
+        screen_h: int,
+    ) -> None:
+        rgb = color[:3]
+        aacircle = getattr(pygame.draw, "aacircle", None)
+        for wx, wy, radius in rings:
+            if radius <= 1.0:
+                continue
+            cx, cy = camera.world_to_screen(wx, wy, screen_w, screen_h)
+            r_px = radius / max(camera.meters_per_pixel(screen_w), 1e-6)
+            if r_px < 1.0:
+                continue
+            if cx + r_px < 0 or cy + r_px < 0 or cx - r_px > screen_w or cy - r_px > screen_h:
+                continue
+            if aacircle is not None:
+                aacircle(self.surface, rgb, (int(cx), int(cy)), max(1, int(r_px)), 1)
+                continue
+            pts = _ring_screen_pts(cx, cy, r_px)
+            for a, b in zip(pts, pts[1:]):
+                pygame.draw.aaline(self.surface, rgb, a, b, 1)
+
     def present(self) -> None:
         pygame.display.flip()
+
+
+def _ring_screen_pts(
+    cx: float, cy: float, radius: float, segs: int = 48
+) -> list[tuple[float, float]]:
+    pts: list[tuple[float, float]] = []
+    for i in range(segs + 1):
+        ang = (2.0 * math.pi) * i / segs
+        pts.append((cx + math.cos(ang) * radius, cy + math.sin(ang) * radius))
+    return pts
 
 
 def _to_screen(

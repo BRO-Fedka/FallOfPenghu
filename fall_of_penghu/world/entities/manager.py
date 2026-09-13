@@ -30,6 +30,9 @@ from fall_of_penghu.world.entities.planner import Planner
 from fall_of_penghu.world.entities.static import StaticObject
 from fall_of_penghu.world.map import MapData
 
+SHORE_BIND_M = 120.0
+_SKIP_GROUND = frozenset({"intercept", "tracer", "shell"})
+
 
 class ObjectManager:
     """Registry, sim step, snapshot, and the only command door."""
@@ -55,6 +58,8 @@ class ObjectManager:
         if self._catalog is not None:
             self._stamp(obj)
         self._by_id[obj.id] = obj
+        if self.planner is not None:
+            self.bind_ground(obj)
 
     def _stamp(self, obj: GameObject) -> None:
         catalog = self._catalog
@@ -120,6 +125,7 @@ class ObjectManager:
         self.planner.land.bind_bridges(
             [obj for obj in self._by_id.values() if obj.kind == "bridge"]
         )
+        self.bind_all_ground()
 
     def bind_transport(self, transport) -> None:
         self._transport = transport
@@ -356,43 +362,82 @@ class ObjectManager:
             return True
         return bool(obj.active)
 
+    def bind_ground(self, obj: GameObject) -> None:
+        if not isinstance(obj, DynamicObject) or obj.kind in _SKIP_GROUND:
+            return
+        if obj.stowed or self.planner is None:
+            obj.ground = None
+            obj.ground_id = None
+            return
+        spot = self.planner.land.locate(obj.x, obj.y)
+        if spot is not None:
+            obj.ground, obj.ground_id = spot
+            return
+        near = self.planner.land.islands.nearest(obj.x, obj.y, SHORE_BIND_M)
+        if near is not None:
+            obj.ground = "island"
+            obj.ground_id = near
+            return
+        obj.ground = None
+        obj.ground_id = None
+
+    def bind_all_ground(self) -> None:
+        for obj in self._by_id.values():
+            self.bind_ground(obj)
+
+    def _arrive_bridge(self, obj: DynamicObject, bridge_id: str) -> None:
+        if self.planner is None:
+            return
+        span = self.planner.land.crossing(bridge_id)
+        if span is None:
+            self.bind_ground(obj)
+            return
+        here = obj.island_id()
+        if here == span.island_a:
+            obj.ground = "island"
+            obj.ground_id = span.island_b
+        elif here == span.island_b:
+            obj.ground = "island"
+            obj.ground_id = span.island_a
+        else:
+            self.bind_ground(obj)
+
     def update(self, dt_sim: float) -> None:
         from fall_of_penghu.profile import scope
 
-        with scope("entities.locate"):
-            for obj in self._by_id.values():
-                if not isinstance(obj, DynamicObject) or obj.stowed:
-                    continue
-                if self.planner is None or obj.kind in (
-                    "intercept",
-                    "tracer",
-                    "shell",
-                ):
-                    continue
-                spot = self.planner.land.locate(obj.x, obj.y)
-                if spot is None:
-                    obj.ground = None
-                    obj.ground_id = None
-                else:
-                    obj.ground, obj.ground_id = spot
         with scope("entities.move"):
+            if dt_sim <= 0.0:
+                return
             for obj in self._by_id.values():
                 if not isinstance(obj, DynamicObject) or obj.stowed:
+                    continue
+                if obj.route is None:
                     continue
                 speed = self._move_speed(obj)
-                if obj.route is not None:
-                    bid = obj.route.bridge_entering(
-                        obj.route.s, speed * max(dt_sim, 0.0)
-                    ) or obj.route.bridge_at(obj.route.s)
-                    if bid is not None and not self.bridge_intact(bid):
-                        obj.route = None
+                ds = speed * dt_sim
+                s0 = obj.route.s
+                leaving = obj.route.bridge_leaving(s0, ds)
+                bid = obj.route.bridge_entering(s0, ds) or obj.route.bridge_at(s0)
+                if bid is not None and not self.bridge_intact(bid):
+                    obj.route = None
+                    continue
                 obj.update(dt_sim, speed)
+                if leaving is not None:
+                    self._arrive_bridge(obj, leaving)
+                elif (
+                    obj.route is None
+                    and obj.mobility == "land"
+                    and obj.island_id() is None
+                ):
+                    self.bind_ground(obj)
 
     def _move_speed(self, obj: DynamicObject) -> float:
         speed = obj.speed_mps
         if obj.mobility != "land" or self._catalog is None:
             return speed
-        if self.planner is not None and self.planner.land.on_road(obj.x, obj.y):
+        if obj.ground == "bridge":
+            return speed
+        if self._cover is not None and self._cover.on_road(obj.x, obj.y):
             return speed
         cover = "open"
         if self._cover is not None:
