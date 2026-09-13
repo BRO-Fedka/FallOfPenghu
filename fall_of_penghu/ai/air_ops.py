@@ -104,7 +104,10 @@ class AirOps:
         return carrier
 
     def step(self, world: World, intel: IntelOps) -> None:
-        self._ensure_carriers(world)
+        from fall_of_penghu.profile import scope
+
+        with scope("air.carriers"):
+            self._ensure_carriers(world)
         now = world.clock.simulation_time
         drones = [
             obj
@@ -115,8 +118,13 @@ class AirOps:
             and obj.kind == "drone"
         ]
         load = _load_by_target(drones)
-        for drone in drones:
-            self._steer(world, drone, intel, now, load)
+        with scope("air.steer"):
+            for drone in drones:
+                self._steer(world, drone, intel, now, load)
+        with scope("air.launch"):
+            self._step_carriers(world, intel, now, load)
+
+    def _step_carriers(self, world: World, intel: IntelOps, now: float, load) -> None:
         for carrier in list(_carriers(world)):
             n = _slot_from_id(carrier.id, 1)
             axis = approach_axis(world, n)

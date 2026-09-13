@@ -46,7 +46,10 @@ class IslandControl:
         if planner is None:
             return
         islands = planner.land.islands
-        here = _ground(world)
+        from fall_of_penghu.profile import scope
+
+        with scope("control.ground_count"):
+            here = _ground(world)
         flipped: list[tuple[int, str]] = []
         for iid in islands.ids():
             row = here.get(iid) or {}

@@ -81,17 +81,23 @@ class Planner:
         *,
         intact: Callable[[str], bool] | None = None,
     ) -> Route | None:
+        from fall_of_penghu.profile import scope
+
         start = (unit.x, unit.y)
         check = intact or (lambda _oid: True)
-        try:
-            if cmd.mode == "manual" and cmd.vertices:
-                return self._constrain(unit.mobility, start, list(cmd.vertices), check)
-            if cmd.target is None:
+        label = f"plan.{cmd.mode}.{unit.mobility}"
+        with scope(label):
+            try:
+                if cmd.mode == "manual" and cmd.vertices:
+                    return self._constrain(
+                        unit.mobility, start, list(cmd.vertices), check
+                    )
+                if cmd.target is None:
+                    return None
+                return self._auto(unit.mobility, start, cmd.target, check)
+            except SearchLimitError as exc:
+                print(f"route search limit: {exc}", flush=True)
                 return None
-            return self._auto(unit.mobility, start, cmd.target, check)
-        except SearchLimitError as exc:
-            print(f"route search limit: {exc}", flush=True)
-            return None
 
     def _auto(
         self,

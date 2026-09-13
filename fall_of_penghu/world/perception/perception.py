@@ -3,6 +3,7 @@ from __future__ import annotations
 from math import hypot
 from typing import TYPE_CHECKING
 
+from fall_of_penghu.profile import scope
 from fall_of_penghu.world.entities.game_object import (
     FACTION_CHINA,
     FACTION_PLAYER,
@@ -130,53 +131,56 @@ class Perception:
         sat_on = sat.active and (
             self.catalog.darkness_scale("satellite", darkness) > 1e-6
         )
-        objects = [
-            obj
-            for obj in world.entities.items
-            if obj.active or is_static_kind(obj.kind)
-        ]
-        for obj in objects:
-            self._pose[obj.id] = (
-                obj.x,
-                obj.y,
-                obj.heading,
-                obj.kind,
-                obj.name,
-                obj.faction,
-                bool(getattr(obj, "moving", False)),
-                tuple(getattr(obj, "trail", ()) or ()),
-                bool(getattr(obj, "orient_radar", False)),
-                bool(obj.active),
-            )
+        with scope("perception.snapshot"):
+            objects = [
+                obj
+                for obj in world.entities.items
+                if obj.active or is_static_kind(obj.kind)
+            ]
+            for obj in objects:
+                self._pose[obj.id] = (
+                    obj.x,
+                    obj.y,
+                    obj.heading,
+                    obj.kind,
+                    obj.name,
+                    obj.faction,
+                    bool(getattr(obj, "moving", False)),
+                    tuple(getattr(obj, "trail", ()) or ()),
+                    bool(getattr(obj, "orient_radar", False)),
+                    bool(obj.active),
+                )
         lookouts = self.lookouts
         if lookouts is not None:
-            occ = occupants(lookouts.islands, objects)
-            self.china_held = china_held(lookouts.inhabited, occ)
+            with scope("perception.lookouts"):
+                occ = occupants(lookouts.islands, objects)
+                self.china_held = china_held(lookouts.inhabited, occ)
         else:
             self.china_held = set()
         for faction in FACTIONS:
-            seen = self._compute(faction, objects, darkness, sat_on)
-            ids = {obj.id for obj in seen}
-            prev = self._prev_ids[faction]
-            for oid in prev - ids:
-                self._remember(faction, oid, now)
-            for obj in seen:
-                if is_static_kind(obj.kind) and obj.faction != faction:
-                    self._remember(faction, obj.id, now)
-                if obj.id not in prev and obj.faction != faction:
-                    self.alerts.on_enter(
-                        faction=faction,
-                        object_id=obj.id,
-                        kind=obj.kind,
-                        x=obj.x,
-                        y=obj.y,
-                        now_sim=now,
-                    )
-            self._visible[faction] = seen
-            self._prev_ids[faction] = ids
-            self._imprints[faction] = [
-                mark for mark in self._imprints[faction] if not mark.dead(now)
-            ]
+            with scope(f"perception.compute.{faction}"):
+                seen = self._compute(faction, objects, darkness, sat_on)
+                ids = {obj.id for obj in seen}
+                prev = self._prev_ids[faction]
+                for oid in prev - ids:
+                    self._remember(faction, oid, now)
+                for obj in seen:
+                    if is_static_kind(obj.kind) and obj.faction != faction:
+                        self._remember(faction, obj.id, now)
+                    if obj.id not in prev and obj.faction != faction:
+                        self.alerts.on_enter(
+                            faction=faction,
+                            object_id=obj.id,
+                            kind=obj.kind,
+                            x=obj.x,
+                            y=obj.y,
+                            now_sim=now,
+                        )
+                self._visible[faction] = seen
+                self._prev_ids[faction] = ids
+                self._imprints[faction] = [
+                    mark for mark in self._imprints[faction] if not mark.dead(now)
+                ]
         world.notices.extend(self.alerts.flush(now))
 
     def _remember(self, faction: str, source_id: str, now_sim: float) -> None:

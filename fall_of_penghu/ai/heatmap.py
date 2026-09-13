@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from math import exp, hypot
 from typing import TYPE_CHECKING
 
+from fall_of_penghu.profile import scope
 from fall_of_penghu.world.entities.game_object import FACTION_CHINA, FACTION_PLAYER, GameObject
 from fall_of_penghu.world.entities.kinds import SHOT_KINDS, is_static_kind
 from fall_of_penghu.world.entities.land.geom import point_in_poly
@@ -91,23 +92,27 @@ class IslandHeatmaps:
     def refresh(self, world: World) -> None:
         catalog = world.catalog
         now = world.clock.simulation_time
-        self._sync_embers(world, now)
-        for grid in self.grids.values():
-            n = len(grid.land)
-            grid.threat = [0.0] * n
-            grid.landing = [0.0] * n
-            grid.aa = [0.0] * n
-        half = max(catalog.heat_half_life_sim_s, 1.0)
-        for ember in self.embers.values():
-            age = max(0.0, now - ember.last_sim)
-            decay = 0.5 ** (age / half)
-            if decay < 0.02:
-                continue
-            weight, sigma = catalog.splat(ember.kind)
-            land_w = catalog.landing_weight(ember.kind)
-            self._splat(ember.x, ember.y, weight * decay, sigma, "threat")
-            self._splat(ember.x, ember.y, land_w * decay, sigma, "landing")
-        self._paint_aa(world)
+        with scope("heat.sync_embers"):
+            self._sync_embers(world, now)
+        with scope("heat.clear_grids"):
+            for grid in self.grids.values():
+                n = len(grid.land)
+                grid.threat = [0.0] * n
+                grid.landing = [0.0] * n
+                grid.aa = [0.0] * n
+        with scope("heat.splat"):
+            half = max(catalog.heat_half_life_sim_s, 1.0)
+            for ember in self.embers.values():
+                age = max(0.0, now - ember.last_sim)
+                decay = 0.5 ** (age / half)
+                if decay < 0.02:
+                    continue
+                weight, sigma = catalog.splat(ember.kind)
+                land_w = catalog.landing_weight(ember.kind)
+                self._splat(ember.x, ember.y, weight * decay, sigma, "threat")
+                self._splat(ember.x, ember.y, land_w * decay, sigma, "landing")
+        with scope("heat.paint_aa"):
+            self._paint_aa(world)
 
     def sample(self, x: float, y: float) -> tuple[float, float, float] | None:
         grid, i = self._at(x, y)

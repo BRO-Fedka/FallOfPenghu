@@ -91,49 +91,52 @@ class DynamicRenderer:
         mouse_world: tuple[float, float] | None = None,
         heatmaps=None,
     ) -> None:
+        from fall_of_penghu.profile import scope
+
         visible = entities.snapshot(FACTION_PLAYER)
         ink = contrast_rgb(tod)
         radar = camera.radar_mode
         pal = palette_for(radar, tod)
         if perception is not None:
-            if radar:
-                self._draw_rings(
-                    renderer,
-                    camera,
-                    perception.radar_rings(FACTION_PLAYER),
-                    screen_w,
-                    screen_h,
-                    RING_COLOR,
-                )
-            else:
-                enabled = set() if vision_on is None else vision_on
-                for ring_id, channel, cover, color, _label in VISION_RINGS:
-                    if ring_id not in enabled:
+            with scope("dynamic.rings"):
+                if radar:
+                    self._draw_rings(
+                        renderer,
+                        camera,
+                        perception.radar_rings(FACTION_PLAYER),
+                        screen_w,
+                        screen_h,
+                        RING_COLOR,
+                    )
+                else:
+                    enabled = set() if vision_on is None else vision_on
+                    for ring_id, channel, cover, color, _label in VISION_RINGS:
+                        if ring_id not in enabled:
+                            continue
+                        self._draw_rings(
+                            renderer,
+                            camera,
+                            perception.sensor_rings(
+                                FACTION_PLAYER, channel, cover=cover
+                            ),
+                            screen_w,
+                            screen_h,
+                            color,
+                        )
+                shown = set() if range_on is None else range_on
+                if show_kinds is not None:
+                    shown &= show_kinds
+                for kind, color, _label in RANGE_RINGS:
+                    if kind not in shown:
                         continue
                     self._draw_rings(
                         renderer,
                         camera,
-                        perception.sensor_rings(
-                            FACTION_PLAYER, channel, cover=cover
-                        ),
+                        perception.engagement_rings(FACTION_PLAYER, {kind}),
                         screen_w,
                         screen_h,
                         color,
                     )
-            shown = set() if range_on is None else range_on
-            if show_kinds is not None:
-                shown &= show_kinds
-            for kind, color, _label in RANGE_RINGS:
-                if kind not in shown:
-                    continue
-                self._draw_rings(
-                    renderer,
-                    camera,
-                    perception.engagement_rings(FACTION_PLAYER, {kind}),
-                    screen_w,
-                    screen_h,
-                    color,
-                )
         marks: list[tuple[object, float]] = [(obj, 1.0) for obj in visible]
         if perception is not None:
             for mark in perception.imprints(FACTION_PLAYER):
@@ -193,6 +196,86 @@ class DynamicRenderer:
                     _heading_arrow(sx, sy, item.heading)
                 )
 
+        with scope("dynamic.icons"):
+            self._blit_mark_icons(
+                renderer,
+                camera,
+                entities,
+                selection,
+                drawn,
+                dests,
+                rotated,
+                intercepts,
+                headings,
+                radar,
+                screen_w,
+                screen_h,
+                ink,
+                now_sim,
+            )
+
+        with scope("dynamic.routes"):
+            self._draw_route_shots(
+                renderer, camera, visible, tracers, shells, screen_w, screen_h
+            )
+        if not radar:
+            self._draw_artillery_marks(
+                renderer,
+                camera,
+                entities,
+                selection,
+                perception,
+                screen_w,
+                screen_h,
+                mouse_world,
+            )
+            self._draw_focus_marks(
+                renderer, camera, entities, selection, screen_w, screen_h
+            )
+
+        if camera.debug_mode and perception is not None:
+            self._draw_china_debug(
+                renderer, camera, perception, screen_w, screen_h
+            )
+        if camera.debug_mode and heatmaps is not None:
+            with scope("dynamic.heatmaps"):
+                self._draw_heatmaps(
+                    renderer, camera, heatmaps, screen_w, screen_h
+                )
+
+        if selection.box is not None:
+            x0, y0, x1, y1 = selection.box
+            left, right = min(x0, x1), max(x0, x1)
+            top, bottom = min(y0, y1), max(y0, y1)
+            renderer.overlay_lines(
+                [
+                    (left, top),
+                    (right, top),
+                    (right, bottom),
+                    (left, bottom),
+                    (left, top),
+                ],
+                (*pal["hud"][:3], 90),
+                1,
+            )
+
+    def _blit_mark_icons(
+        self,
+        renderer,
+        camera: Camera,
+        entities: Entities,
+        selection: Selection,
+        drawn,
+        dests,
+        rotated,
+        intercepts,
+        headings,
+        radar: bool,
+        screen_w: int,
+        screen_h: int,
+        ink,
+        now_sim: float,
+    ) -> None:
         if drawn:
             strip = self._ensure_strip(len(drawn))
             strip.fill((0, 0, 0, 0))
@@ -232,6 +315,16 @@ class DynamicRenderer:
         for alpha, segs in headings.items():
             renderer.overlay_aalines(segs, (*ink, alpha))
 
+    def _draw_route_shots(
+        self,
+        renderer,
+        camera: Camera,
+        visible,
+        tracers,
+        shells,
+        screen_w: int,
+        screen_h: int,
+    ) -> None:
         routes: list[list[tuple[float, float]]] = []
         for obj in visible:
             if obj.faction != FACTION_PLAYER:
@@ -256,45 +349,6 @@ class DynamicRenderer:
             renderer.overlay_aalines(tracers, TRACER_COLOR)
         if shells:
             renderer.overlay_aalines(shells, SHELL_COLOR)
-        if not radar:
-            self._draw_artillery_marks(
-                renderer,
-                camera,
-                entities,
-                selection,
-                perception,
-                screen_w,
-                screen_h,
-                mouse_world,
-            )
-            self._draw_focus_marks(
-                renderer, camera, entities, selection, screen_w, screen_h
-            )
-
-        if camera.debug_mode and perception is not None:
-            self._draw_china_debug(
-                renderer, camera, perception, screen_w, screen_h
-            )
-        if camera.debug_mode and heatmaps is not None:
-            self._draw_heatmaps(
-                renderer, camera, heatmaps, screen_w, screen_h
-            )
-
-        if selection.box is not None:
-            x0, y0, x1, y1 = selection.box
-            left, right = min(x0, x1), max(x0, x1)
-            top, bottom = min(y0, y1), max(y0, y1)
-            renderer.overlay_lines(
-                [
-                    (left, top),
-                    (right, top),
-                    (right, bottom),
-                    (left, bottom),
-                    (left, top),
-                ],
-                (*pal["hud"][:3], 90),
-                1,
-            )
 
     def _draw_china_debug(
         self,

@@ -40,10 +40,14 @@ class SoftwareMapRenderer:
     ) -> dict[str, int]:
         self.radar = camera.radar_mode
         self.tod = tod
+        from fall_of_penghu.profile import scope
+
         if camera.radar_mode:
-            stats = self._draw_radar(camera, screen_w, screen_h)
+            with scope("map.radar"):
+                stats = self._draw_radar(camera, screen_w, screen_h)
         else:
-            stats = self._draw_normal(camera, screen_w, screen_h, tod)
+            with scope("map.normal"):
+                stats = self._draw_normal(camera, screen_w, screen_h, tod)
         self.last_stats = stats
         return stats
 

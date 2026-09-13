@@ -39,10 +39,27 @@ class GroundOps:
         if planner is None:
             return
         islands = planner.land.islands
+        from fall_of_penghu.profile import scope
+
         busy = world.transport.busy_ids()
         held = china_by_island(world)
         assault = None if intel.assault is None else intel.assault.island
-        hops = _assign_garrison(world, intel, held, assault, busy)
+        with scope("ground.assign"):
+            hops = _assign_garrison(world, intel, held, assault, busy)
+        with scope("ground.repath"):
+            self._drive_units(world, intel, islands, busy, held, assault, hops, now)
+
+    def _drive_units(
+        self,
+        world: World,
+        intel: IntelOps,
+        islands,
+        busy,
+        held,
+        assault,
+        hops,
+        now: float,
+    ) -> None:
         for obj in world.entities.items:
             if not isinstance(obj, DynamicObject):
                 continue

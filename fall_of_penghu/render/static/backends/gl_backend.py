@@ -1555,15 +1555,20 @@ class GLMapRenderer:
         view = camera.world_bounds(screen_w, screen_h)
         view_w = camera.view_width_m
         mpp = camera.meters_per_pixel(screen_w)
+        from fall_of_penghu.profile import scope
+
         target = self._msaa_fbo or self._fbo
         target.use()
         self.ctx.viewport = (0, 0, screen_w, screen_h)
         if camera.radar_mode:
-            stats = self._draw_radar(view, view_w, mpp)
+            with scope("map.radar"):
+                stats = self._draw_radar(view, view_w, mpp)
         else:
-            stats = self._draw_normal(view, view_w, tod)
+            with scope("map.normal"):
+                stats = self._draw_normal(view, view_w, tod)
         self.ctx.disable(self.mgl.BLEND)
-        self._blit_to_screen(screen_w, screen_h)
+        with scope("map.present_blit"):
+            self._blit_to_screen(screen_w, screen_h)
         self.last_stats = stats
         return stats
 
@@ -1582,28 +1587,38 @@ class GLMapRenderer:
             "roads": 0,
             "airports": 0,
         }
+        from fall_of_penghu.profile import scope
+
         self.ctx.disable(self.mgl.BLEND)
-        self._draw_sea(view, pal)
+        with scope("map.sea"):
+            self._draw_sea(view, pal)
         _set_uniform(self.prog_map, "u_view", view)
         _set_uniform(self.prog_map, "u_tint", (1.0, 1.0, 1.0))
         _set_uniform(self.prog_map, "u_opacity", 1.0)
 
-        stats["taiwan"] = self._draw_mesh("taiwan", pal["taiwan"])
-        stats["coast"] = self._draw_land(view, pal)
-        stats["vegetation"] += self._draw_veg("forest", 1, view, view_w, pal)
-        stats["vegetation"] += self._draw_veg("grass", 0, view, view_w, pal)
-        self._draw_shore(view, view_w, pal)
+        with scope("map.taiwan"):
+            stats["taiwan"] = self._draw_mesh("taiwan", pal["taiwan"])
+        with scope("map.land"):
+            stats["coast"] = self._draw_land(view, pal)
+        with scope("map.veg"):
+            stats["vegetation"] += self._draw_veg("forest", 1, view, view_w, pal)
+            stats["vegetation"] += self._draw_veg("grass", 0, view, view_w, pal)
+        with scope("map.shore"):
+            self._draw_shore(view, view_w, pal)
 
         road_a = layer_opacity(view_w, ROADS_FADE_FULL_M, ROADS_FADE_GONE_M)
-        stats["roads"] += self._draw_mesh("roads", pal["road"], road_a)
-        stats["roads"] += self._draw_mesh("bridges", pal["bridge"], road_a)
+        with scope("map.roads"):
+            stats["roads"] += self._draw_mesh("roads", pal["road"], road_a)
+            stats["roads"] += self._draw_mesh("bridges", pal["bridge"], road_a)
 
         apt_a = layer_opacity(view_w, AIRPORTS_FADE_FULL_M, AIRPORTS_FADE_GONE_M)
-        stats["airports"] += self._draw_mesh("airports", pal["airport"], apt_a)
-        stats["airports"] += self._draw_mesh("airport_lines", pal["airport"], apt_a)
+        with scope("map.airports"):
+            stats["airports"] += self._draw_mesh("airports", pal["airport"], apt_a)
+            stats["airports"] += self._draw_mesh("airport_lines", pal["airport"], apt_a)
 
         bld_a = layer_opacity(view_w, BUILDINGS_FADE_FULL_M, BUILDINGS_FADE_GONE_M)
-        stats["buildings"] = self._draw_mesh("buildings", pal["building"], bld_a)
+        with scope("map.buildings"):
+            stats["buildings"] = self._draw_mesh("buildings", pal["building"], bld_a)
         return stats
 
     def _draw_radar(

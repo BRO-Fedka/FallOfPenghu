@@ -59,14 +59,21 @@ class NavalOps:
         self.axis = "west"
 
     def step(self, world: World, intel: IntelOps) -> None:
-        self._spawn_landing_ships(world)
+        from fall_of_penghu.profile import scope
+
+        with scope("naval.spawn"):
+            self._spawn_landing_ships(world)
         ships = _landing_ships(world)
-        self._occupy_quiet(world, ships)
-        self._drive_hops(world, intel)
-        self._drive_reloading(world, intel, ships)
-        active = _assault_ships(world, ships)
-        for ship in ships:
-            self._step_ship(world, ship, intel, ships, active)
+        with scope("naval.occupy"):
+            self._occupy_quiet(world, ships)
+        with scope("naval.hops"):
+            self._drive_hops(world, intel)
+        with scope("naval.reload"):
+            self._drive_reloading(world, intel, ships)
+        with scope("naval.ships"):
+            active = _assault_ships(world, ships)
+            for ship in ships:
+                self._step_ship(world, ship, intel, ships, active)
 
     def _spawn_landing_ships(self, world: World) -> None:
         now = world.clock.simulation_time

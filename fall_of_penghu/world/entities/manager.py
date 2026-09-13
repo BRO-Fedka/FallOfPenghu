@@ -357,30 +357,36 @@ class ObjectManager:
         return bool(obj.active)
 
     def update(self, dt_sim: float) -> None:
-        for obj in self._by_id.values():
-            if not isinstance(obj, DynamicObject):
-                continue
-            if obj.stowed:
-                continue
-            if self.planner is not None and obj.kind not in (
-                "intercept",
-                "tracer",
-                "shell",
-            ):
+        from fall_of_penghu.profile import scope
+
+        with scope("entities.locate"):
+            for obj in self._by_id.values():
+                if not isinstance(obj, DynamicObject) or obj.stowed:
+                    continue
+                if self.planner is None or obj.kind in (
+                    "intercept",
+                    "tracer",
+                    "shell",
+                ):
+                    continue
                 spot = self.planner.land.locate(obj.x, obj.y)
                 if spot is None:
                     obj.ground = None
                     obj.ground_id = None
                 else:
                     obj.ground, obj.ground_id = spot
-            speed = self._move_speed(obj)
-            if obj.route is not None:
-                bid = obj.route.bridge_entering(
-                    obj.route.s, speed * max(dt_sim, 0.0)
-                ) or obj.route.bridge_at(obj.route.s)
-                if bid is not None and not self.bridge_intact(bid):
-                    obj.route = None
-            obj.update(dt_sim, speed)
+        with scope("entities.move"):
+            for obj in self._by_id.values():
+                if not isinstance(obj, DynamicObject) or obj.stowed:
+                    continue
+                speed = self._move_speed(obj)
+                if obj.route is not None:
+                    bid = obj.route.bridge_entering(
+                        obj.route.s, speed * max(dt_sim, 0.0)
+                    ) or obj.route.bridge_at(obj.route.s)
+                    if bid is not None and not self.bridge_intact(bid):
+                        obj.route = None
+                obj.update(dt_sim, speed)
 
     def _move_speed(self, obj: DynamicObject) -> float:
         speed = obj.speed_mps

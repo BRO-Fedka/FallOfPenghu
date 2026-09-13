@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 
 from fall_of_penghu.ai.coverage import ForestCoverage
 from fall_of_penghu.ai.heatmap import BeachPick, IslandHeatmaps
+from fall_of_penghu.profile import scope
 from fall_of_penghu.world.entities.command import SetRoute
 from fall_of_penghu.world.entities.dynamic import DynamicObject
 from fall_of_penghu.world.entities.game_object import FACTION_CHINA, FACTION_PLAYER
@@ -75,11 +76,15 @@ class IntelOps:
     def step(self, world: World) -> None:
         self._now = world.clock.simulation_time
         if not self._baked or not self._sweeps:
-            self.bake(world)
-        self.heat.refresh(world)
-        self.forest.mark(world)
+            with scope("intel.bake"):
+                self.bake(world)
+        with scope("heat.refresh"):
+            self.heat.refresh(world)
+        with scope("forest.mark"):
+            self.forest.mark(world)
         prev = None if self.assault is None else self.assault.island
-        self.assault = self.heat.pick_landing(world)
+        with scope("heat.pick_landing"):
+            self.assault = self.heat.pick_landing(world)
         if self.assault is None:
             if prev is not None:
                 self.log.emit(world.clock.simulation_time, "assault", "hold — all beaches hot")
@@ -90,7 +95,8 @@ class IntelOps:
                 f"island {self.assault.island} "
                 f"{self.assault.x:.0f},{self.assault.y:.0f} heat={self.assault.landing:.2f}",
             )
-        self._step_scouts(world)
+        with scope("scouts"):
+            self._step_scouts(world)
 
     def sample(self, x: float, y: float) -> tuple[float, float, float] | None:
         return self.heat.sample(x, y)
@@ -103,12 +109,13 @@ class IntelOps:
         now = world.clock.simulation_time
         dusk = world.clock.time_of_day >= catalog.scout_dusk_tod
         scouts = _china_kind(world, "scout")
-        self._note_deaths(world, scouts, now, catalog)
-        scouts = self._cull_scouts(world, cap)
-        rings = _aa_rings(world, self._kills, now)
-        self._air_debt(rings)
-        claimed = _follow_claimed(scouts)
-        posts = _cluster_posts(world, catalog, rings, self, claimed) if dusk else []
+        with scope("scouts.bookkeeping"):
+            self._note_deaths(world, scouts, now, catalog)
+            scouts = self._cull_scouts(world, cap)
+            rings = _aa_rings(world, self._kills, now)
+            self._air_debt(rings)
+            claimed = _follow_claimed(scouts)
+            posts = _cluster_posts(world, catalog, rings, self, claimed) if dusk else []
         used_posts: set[int] = set()
         watch, free = _split_watch(scouts)
         patrol, search = _split_roles(free, n_patrol)
@@ -116,26 +123,27 @@ class IntelOps:
         _bind_slots(search, max(1, n_search))
         loop = _reachable_loop(self._sweeps, rings, self) or self._circuit
         self._hand_off(world, search, claimed, now, rings)
-        for scout in watch:
-            self._drive_search(
-                world, scout, now, dusk, max(0, _slot_of(scout)), n_search,
-                posts, used_posts, claimed, rings,
-            )
-        for scout in patrol:
-            self._drive_circuit(world, scout, now, rings, loop, n_patrol)
-        for scout in search:
-            slot = max(0, _slot_of(scout))
-            self._drive_search(
-                world, scout, now, dusk, slot, n_search, posts, used_posts, claimed, rings
-            )
-            self._jobs[scout.id] = {
-                "role": "search",
-                "slot": slot,
-                "sweep_k": int(getattr(scout, "sweep_k", 0) or 0),
-                "follow_id": scout.strike_id if scout.task == "follow" else None,
-            }
-            if scout.task != "follow":
-                self._progress[slot] = int(getattr(scout, "sweep_k", 0) or 0)
+        with scope("scouts.drive"):
+            for scout in watch:
+                self._drive_search(
+                    world, scout, now, dusk, max(0, _slot_of(scout)), n_search,
+                    posts, used_posts, claimed, rings,
+                )
+            for scout in patrol:
+                self._drive_circuit(world, scout, now, rings, loop, n_patrol)
+            for scout in search:
+                slot = max(0, _slot_of(scout))
+                self._drive_search(
+                    world, scout, now, dusk, slot, n_search, posts, used_posts, claimed, rings
+                )
+                self._jobs[scout.id] = {
+                    "role": "search",
+                    "slot": slot,
+                    "sweep_k": int(getattr(scout, "sweep_k", 0) or 0),
+                    "follow_id": scout.strike_id if scout.task == "follow" else None,
+                }
+                if scout.task != "follow":
+                    self._progress[slot] = int(getattr(scout, "sweep_k", 0) or 0)
         for scout in watch:
             self._jobs[scout.id] = {
                 "role": "follow",
@@ -145,6 +153,20 @@ class IntelOps:
             }
         if now < self._scout_ready_sim:
             return
+        with scope("scouts.launch"):
+            self._launch_ready_scouts(
+                world, cap, n_patrol, n_search, now, rings
+            )
+
+    def _launch_ready_scouts(
+        self,
+        world: World,
+        cap: int,
+        n_patrol: int,
+        n_search: int,
+        now: float,
+        rings: list[Ring],
+    ) -> None:
         carrier = _best_carrier(world)
         if carrier is None:
             return

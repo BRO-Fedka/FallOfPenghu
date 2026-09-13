@@ -5,6 +5,7 @@ from fall_of_penghu.ai.ground_ops import GroundOps
 from fall_of_penghu.ai.intel import IntelOps
 from fall_of_penghu.ai.log import DecisionLog
 from fall_of_penghu.ai.naval_ops import NavalOps
+from fall_of_penghu.profile import scope
 from fall_of_penghu.world.world import World
 
 
@@ -21,7 +22,11 @@ class ChinaDirector:
         self.air.ensure_carrier(world)
 
     def step(self, world: World) -> None:
-        self.intel.step(world)
-        self.air.step(world, self.intel)
-        self.naval.step(world, self.intel)
-        self.ground.step(world, self.intel)
+        with scope("intel"):
+            self.intel.step(world)
+        with scope("air"):
+            self.air.step(world, self.intel)
+        with scope("naval"):
+            self.naval.step(world, self.intel)
+        with scope("ground"):
+            self.ground.step(world, self.intel)

@@ -25,6 +25,7 @@ from fall_of_penghu.world.perception import Perception, format_calendar_span
 
 PANEL_H = 40
 DEBUG_H = 44
+FPS_H = 24
 BTN_W = 52
 BTN_H = 26
 BTN_GAP = 6
@@ -73,7 +74,11 @@ class Hud:
     ) -> bool:
         if y < self._panel_h:
             return True
-        inset = DEBUG_H if debug else 0
+        from fall_of_penghu.profile import prof
+
+        if prof.enabled and prof.panel.hits(x, y):
+            return True
+        inset = DEBUG_H if debug else FPS_H
         if chat is not None and chat.hits(x, y, screen_w, screen_h, inset):
             return True
         if debug and palette is not None and palette.hits(x, y):
@@ -90,7 +95,7 @@ class Hud:
         for rect, _cmd in self._port_buttons:
             if rect.collidepoint(x, y):
                 return True
-        return bool(debug and y >= screen_h - DEBUG_H)
+        return y >= screen_h - inset
 
     def _layout(self, debug: bool) -> None:
         speeds: tuple[float, ...] = SPEEDS + ((DEBUG_SPEED,) if debug else ())
@@ -252,7 +257,7 @@ class Hud:
                     selection.port_id = owner.id
                 return True
         if chat is not None:
-            inset = DEBUG_H if camera.debug_mode else 0
+            inset = DEBUG_H if camera.debug_mode else FPS_H
             msg = chat.click_at(*event.pos, screen_w, screen_h, inset)
             if msg is not None:
                 camera.fly_to(msg.x, msg.y)
@@ -290,6 +295,8 @@ class Hud:
         heat_probe: tuple[float, float, float] | None = None,
         defeated: bool = False,
     ) -> None:
+        from fall_of_penghu.profile import scope
+
         debug = camera.debug_mode
         self._layout(debug)
         self._layout_port_menu(selection, entities, camera, screen_w, screen_h)
@@ -453,7 +460,8 @@ class Hud:
             hint = (
                 "WASD pan  LMB select  Shift box  RMB move  "
                 "Shift+RMB sea/air waypoints  Q/E zoom  "
-                "Shift+Del delete  F12 debug  red=C snapshot  yellow=C imprint  "
+                "Shift+Del delete  F11 frame prof  F12 debug  "
+                "red=C snapshot  yellow=C imprint  "
                 "heat R/G/B=threat/land/AA  Esc quit"
             )
             footer = pygame.Surface((screen_w, DEBUG_H), pygame.SRCALPHA)
@@ -461,6 +469,12 @@ class Hud:
             footer.blit(self.small.render(hud, True, ink), (10, 4))
             footer.blit(self.small.render(hint, True, ink), (10, 22))
             renderer.overlay(footer, (0, screen_h - DEBUG_H))
+        else:
+            footer = pygame.Surface((screen_w, FPS_H), pygame.SRCALPHA)
+            footer.fill((8, 10, 12, 170))
+            label = self.small.render(f"{fps:5.1f} fps", True, ink)
+            footer.blit(label, (10, (FPS_H - label.get_height()) // 2))
+            renderer.overlay(footer, (0, screen_h - FPS_H))
 
         self._blit_port_menu(renderer, selection, entities, ink, screen_w, screen_h)
         if selection is not None and selection.artillery_aim:
@@ -480,8 +494,47 @@ class Hud:
             box.blit(hint, (6, 4))
             renderer.overlay(box, (12, PANEL_H + 8))
 
+        with scope("hud.palettes"):
+            self._blit_side_panels(
+                renderer,
+                camera,
+                chat,
+                palette,
+                engage,
+                vision,
+                ranges,
+                display,
+                selection,
+                entities,
+                perception,
+                mouse_screen,
+                ink,
+                screen_w,
+                screen_h,
+                debug,
+            )
+
+    def _blit_side_panels(
+        self,
+        renderer,
+        camera,
+        chat,
+        palette,
+        engage,
+        vision,
+        ranges,
+        display,
+        selection,
+        entities,
+        perception,
+        mouse_screen,
+        ink,
+        screen_w,
+        screen_h,
+        debug,
+    ) -> None:
         if chat is not None:
-            inset = DEBUG_H if debug else 0
+            inset = DEBUG_H if debug else FPS_H
             self._blit_chat(renderer, chat, ink, screen_w, screen_h, inset)
 
         if debug and palette is not None:

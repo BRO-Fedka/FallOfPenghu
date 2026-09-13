@@ -26,39 +26,45 @@ class Combat:
         self._rng = random.Random(int(seed) + 17)
 
     def step(self, world: World) -> None:
+        from fall_of_penghu.profile import scope
+
         now = world.clock.simulation_time
         dt = world.clock.dt_sim
         if dt <= 0.0:
             return
-        missiles = [
-            obj for obj in world.entities.items if isinstance(obj, Intercept)
-        ]
-        tracers = [obj for obj in world.entities.items if isinstance(obj, Tracer)]
-        for shot in missiles:
-            shot.steer(world.entities.get(shot.target_id), now, dt)
-        for shot in tracers:
-            if shot.fly(now, dt):
-                if shot.blast_m > 0.0:
-                    shooter = world.entities.get(shot.shooter_id)
-                    _splash(
-                        world,
-                        shot.x,
-                        shot.y,
-                        shot.blast_m,
-                        shot.damage,
-                        shot.faction,
-                        shooter,
-                        world.catalog,
-                    )
-                elif shot.will_hit:
-                    target = world.entities.get(shot.target_id)
-                    if target is not None and target.active:
-                        apply_damage(target, shot.damage, world)
-        self._kamikaze(world)
-        restock(world)
-        factions = {obj.faction for obj in world.entities.items if is_battery(obj)}
-        for faction in factions:
-            self._engage(world, faction, now, missiles, tracers)
+        with scope("combat.projectiles"):
+            missiles = [
+                obj for obj in world.entities.items if isinstance(obj, Intercept)
+            ]
+            tracers = [obj for obj in world.entities.items if isinstance(obj, Tracer)]
+            for shot in missiles:
+                shot.steer(world.entities.get(shot.target_id), now, dt)
+            for shot in tracers:
+                if shot.fly(now, dt):
+                    if shot.blast_m > 0.0:
+                        shooter = world.entities.get(shot.shooter_id)
+                        _splash(
+                            world,
+                            shot.x,
+                            shot.y,
+                            shot.blast_m,
+                            shot.damage,
+                            shot.faction,
+                            shooter,
+                            world.catalog,
+                        )
+                    elif shot.will_hit:
+                        target = world.entities.get(shot.target_id)
+                        if target is not None and target.active:
+                            apply_damage(target, shot.damage, world)
+        with scope("combat.kamikaze"):
+            self._kamikaze(world)
+        with scope("combat.restock"):
+            restock(world)
+        with scope("combat.engage"):
+            factions = {obj.faction for obj in world.entities.items if is_battery(obj)}
+            for faction in factions:
+                self._engage(world, faction, now, missiles, tracers)
         for obj in list(world.entities.items):
             if obj.kind in SHOT_KINDS and not obj.active:
                 world.entities.discard(obj.id)
