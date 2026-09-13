@@ -9,6 +9,7 @@ from fall_of_penghu.render.dynamic.icons import CHIP, IconStore
 from fall_of_penghu.render.static.scene import palette_for
 from fall_of_penghu.render.static.tod import contrast_rgb
 from fall_of_penghu.selection import Selection
+from fall_of_penghu.range import RANGE_RINGS
 from fall_of_penghu.vision import SCATTER_COLOR, SCATTER_LINE, VISION_RINGS
 from fall_of_penghu.world.entities import (
     DynamicObject,
@@ -28,7 +29,6 @@ RING_SEGS = 72
 RING_COLOR = (70, 190, 120, 90)
 PRIMITIVE_RING = (70, 170, 220, 110)
 ADVANCED_RING = (170, 90, 220, 110)
-ENGAGE_COLOR = (235, 200, 40, 150)
 FOCUS_COLOR = (255, 150, 50, 200)
 HEADING_PX = 18.0
 HEADING_GAP = ICON_PX * 0.5
@@ -86,6 +86,8 @@ class DynamicRenderer:
         perception: Perception | None = None,
         now_sim: float = 0.0,
         vision_on: set[str] | None = None,
+        range_on: set[str] | None = None,
+        show_kinds: set[str] | None = None,
         mouse_world: tuple[float, float] | None = None,
         heatmaps=None,
     ) -> None:
@@ -118,18 +120,20 @@ class DynamicRenderer:
                         screen_h,
                         color,
                     )
-            self._draw_rings(
-                renderer,
-                camera,
-                perception.engagement_rings(
-                    FACTION_PLAYER,
-                    selection.selected,
-                    show_all=camera.show_engagement,
-                ),
-                screen_w,
-                screen_h,
-                ENGAGE_COLOR,
-            )
+            shown = set() if range_on is None else range_on
+            if show_kinds is not None:
+                shown &= show_kinds
+            for kind, color, _label in RANGE_RINGS:
+                if kind not in shown:
+                    continue
+                self._draw_rings(
+                    renderer,
+                    camera,
+                    perception.engagement_rings(FACTION_PLAYER, {kind}),
+                    screen_w,
+                    screen_h,
+                    color,
+                )
         marks: list[tuple[object, float]] = [(obj, 1.0) for obj in visible]
         if perception is not None:
             for mark in perception.imprints(FACTION_PLAYER):
@@ -152,6 +156,12 @@ class DynamicRenderer:
             if getattr(item, "stowed", False):
                 continue
             kind = getattr(item, "kind", "")
+            if (
+                show_kinds is not None
+                and kind not in show_kinds
+                and kind not in ("tracer", "shell", "intercept")
+            ):
+                continue
             sx, sy = camera.world_to_screen(item.x, item.y, screen_w, screen_h)
             if kind in ("tracer", "shell"):
                 streak = _heading_world_streak(camera, item, screen_w, screen_h)

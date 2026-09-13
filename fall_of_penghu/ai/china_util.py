@@ -31,6 +31,20 @@ ASSAULT_UNLOAD_SIM = 40.0
 SHIP_SPAWN_SIM = 1400.0
 MAX_ASSAULT_SHIPS = 2
 MAX_LANDING_SHIPS = 3
+MAX_FORCE_HULLS = 12
+
+
+def campaign_day(world: "World") -> int:
+    """0 on the opening noon. Clock label D1 is this plus one."""
+    return max(0, int(world.clock.calendar_day))
+
+
+def landing_ship_cap(world: "World") -> int:
+    return min(MAX_FORCE_HULLS, 1 + campaign_day(world))
+
+
+def carrier_cap(world: "World") -> int:
+    return min(MAX_FORCE_HULLS, 1 + campaign_day(world))
 MAX_SHORE_BOATS = 6
 KEEP_SHORE_BOATS = 4
 ARRIVE_M = 400.0
@@ -252,6 +266,10 @@ def empty_port_islands(world: World) -> list[int]:
     return [iid for iid in port_islands(world) if not held.get(iid)]
 
 
+def china_owned(world: World, island: int) -> bool:
+    return world.control.is_china(island)
+
+
 def capture_islands(world: World) -> list[int]:
     """Inhabited islands first (deny player lookouts), then other ports."""
     planner = world.entities.planner
@@ -259,21 +277,24 @@ def capture_islands(world: World) -> list[int]:
         return []
     islands = planner.land.islands
     held = china_by_island(world)
+    owned = world.control.china_islands()
     lookouts = world.perception.lookouts
     inhabited = list(lookouts.inhabited) if lookouts is not None else []
     inhabited.sort(key=lambda i: _south_key(islands, i))
     out: list[int] = []
     for iid in inhabited:
-        if not held.get(iid):
-            out.append(iid)
+        if iid in owned or held.get(iid):
+            continue
+        out.append(iid)
     for iid in port_islands(world):
-        if iid not in out and not held.get(iid):
-            out.append(iid)
+        if iid in out or iid in owned or held.get(iid):
+            continue
+        out.append(iid)
     return out
 
 
 def island_has_foe(world: World, island: int) -> bool:
-    """Any live player unit China can see standing on that island."""
+    """Visible player ground on that island. Air overhead does not defend it."""
     planner = world.entities.planner
     if planner is None:
         return False
@@ -284,6 +305,8 @@ def island_has_foe(world: World, island: int) -> bool:
         if is_static_kind(obj.kind) or obj.kind in SHOT_KINDS:
             continue
         if getattr(obj, "stowed", False):
+            continue
+        if getattr(obj, "mobility", "") != "land":
             continue
         if islands.at(obj.x, obj.y) == island:
             return True
@@ -328,8 +351,15 @@ def is_surplus(
     island: int,
     assault: int | None,
     by_island: dict[int, list[DynamicObject]],
+    world: "World | None" = None,
 ) -> bool:
-    mins = MIN_ASSAULT if assault is not None and island == assault else MIN_HOLD
+    owned = world is not None and china_owned(world, island)
+    if owned:
+        mins = MIN_HOLD
+    elif assault is not None and island == assault:
+        mins = MIN_ASSAULT
+    else:
+        mins = MIN_HOLD
     need = mins.get(unit.kind, 1)
     n = sum(1 for obj in by_island.get(island, ()) if obj.kind == unit.kind)
     return n > need

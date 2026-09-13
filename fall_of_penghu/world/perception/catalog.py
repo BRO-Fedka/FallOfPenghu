@@ -63,7 +63,8 @@ class DetectionCatalog:
         self.radar_aa_factor = float(heat.get("radar_aa_factor") or 0.35)
         self.scout_standoff_m = float(heat.get("scout_standoff_m") or 400.0)
         self.scout_reassign_sim_s = float(heat.get("scout_reassign_sim_s") or 180.0)
-        self.scout_count = max(1, int(heat.get("scout_count") or 10))
+        self.scout_count = max(1, int(heat.get("scout_count") or 6))
+        self.scout_per_day = max(0, int(heat.get("scout_per_day") or 4))
         self.scout_patrol_count = max(0, int(heat.get("scout_patrol_count") or 2))
         self.scout_dusk_tod = float(heat.get("scout_dusk_tod") or (17.0 / 24.0))
         self.drone_lost_sim_s = float(heat.get("drone_lost_sim_s") or 90.0)
@@ -83,8 +84,8 @@ class DetectionCatalog:
             str(k): float(v) for k, v in (health.get("kinds") or {}).items()
         }
         self.rest_idle_sim_s = float(health.get("rest_idle_sim_s") or 90.0)
-        self.heal_full_sim_s = float(health.get("heal_full_sim_s") or 1800.0)
-        self.ammo_full_sim_s = float(health.get("ammo_full_sim_s") or 1800.0)
+        self.heal_full_sim_s = float(health.get("heal_full_sim_s") or 57600.0)
+        self.ammo_full_sim_s = float(health.get("ammo_full_sim_s") or 0.0)
         movement = data.get("movement") or {}
         self._move_defaults = movement.get("defaults") or {}
         self._move_kinds = movement.get("kinds") or {}
@@ -100,6 +101,10 @@ class DetectionCatalog:
         src = Path(path) if path is not None else PACKAGE_DATA
         with src.open("r", encoding="utf-8") as fh:
             return cls(json.load(fh))
+
+    def scout_cap(self, day: int) -> int:
+        """Day 0 (opening noon) is six scouts; four more each calendar midnight."""
+        return max(1, self.scout_count + self.scout_per_day * max(0, int(day)))
 
     def listed_kinds(self) -> tuple[str, ...]:
         kinds: set[str] = set(self._detectable)

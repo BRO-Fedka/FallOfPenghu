@@ -23,14 +23,15 @@ WHEEL_DEADZONE = 2.0
 ZOOM_KEY_DELTA = 10.0
 MAX_KEY_TICKS = 32.0
 
-SPEED_KEYS = {
-    pygame.K_F1: SPEEDS[0],
-    pygame.K_F2: SPEEDS[1],
-    pygame.K_F3: SPEEDS[2],
-    pygame.K_F4: SPEEDS[3],
-    pygame.K_F5: SPEEDS[4],
-    pygame.K_F6: SPEEDS[5],
-}
+_SPEED_F_KEYS = (
+    pygame.K_F1,
+    pygame.K_F2,
+    pygame.K_F3,
+    pygame.K_F4,
+    pygame.K_F5,
+    pygame.K_F6,
+)
+SPEED_KEYS = dict(zip(_SPEED_F_KEYS, SPEEDS))
 
 ZOOM_IN_KEYS = (pygame.K_e, pygame.K_EQUALS, pygame.K_KP_PLUS)
 ZOOM_OUT_KEYS = (pygame.K_q, pygame.K_MINUS, pygame.K_KP_MINUS)
@@ -81,8 +82,6 @@ class Input:
                 self.quit = True
             elif event.key == pygame.K_r:
                 camera.radar_mode = not camera.radar_mode
-            elif event.key == pygame.K_g:
-                camera.show_engagement = not camera.show_engagement
             elif event.key == pygame.K_SPACE:
                 clock.toggle_pause()
             elif event.key in SPEED_KEYS:
@@ -196,6 +195,7 @@ class Input:
             own_only=not camera.debug_mode,
             source=list(entities.items) if camera.debug_mode else None,
             include_intercept=camera.debug_mode,
+            kinds=selection.visible_kinds,
         )
         self._press_obj_id = hit.id if hit else None
         mods = pygame.key.get_mods()
@@ -281,6 +281,7 @@ class Input:
                     own_only=False,
                     prefer_own=False,
                     source=list(entities.snapshot(FACTION_PLAYER)),
+                    kinds=selection.visible_kinds,
                 )
                 if (
                     hit is not None
@@ -402,6 +403,7 @@ class Input:
                 *event.pos,
                 own_only=not camera.debug_mode,
                 source=list(entities.items) if camera.debug_mode else None,
+                kinds=selection.visible_kinds,
             )
             if hit is None or hit.kind != "ferry" or hit.faction != FACTION_PLAYER:
                 return
@@ -417,6 +419,7 @@ class Input:
                 *event.pos,
                 own_only=not camera.debug_mode,
                 source=list(entities.items) if camera.debug_mode else None,
+                kinds=selection.visible_kinds,
             )
             if hit is None or hit.id == port_id:
                 return
@@ -436,6 +439,7 @@ class Input:
                 *event.pos,
                 own_only=not camera.debug_mode,
                 source=list(entities.items) if camera.debug_mode else None,
+                kinds=selection.visible_kinds,
             )
             wx, wy = camera.screen_to_world(*event.pos, screen_w, screen_h)
             dest_port_id = None

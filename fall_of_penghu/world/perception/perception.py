@@ -102,15 +102,13 @@ class Perception:
     def engagement_rings(
         self,
         faction: str,
-        selected: set[str],
-        *,
-        show_all: bool = False,
+        kinds: set[str],
     ) -> list[tuple[float, float, float]]:
         rings: list[tuple[float, float, float]] = []
-        if not show_all and not selected:
+        if not kinds:
             return rings
         for obj in self._visible.get(faction, ()):
-            if not show_all and obj.id not in selected:
+            if obj.kind not in kinds:
                 continue
             radius = self.catalog.engagement_m(obj.kind)
             if radius is None:

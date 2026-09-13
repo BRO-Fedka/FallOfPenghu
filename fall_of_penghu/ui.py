@@ -8,16 +8,17 @@ from fall_of_penghu.render.dynamic.icons import CHIP, IconStore
 from fall_of_penghu.render.static.tod import palette_at, phase_label
 from fall_of_penghu.selection import Selection
 from fall_of_penghu.world.clock import DEBUG_SPEED, SPEEDS, Clock
-from fall_of_penghu.world.combat.doctrine import FIRE, HOLD, LABELS, doctrines_for, is_battery
+from fall_of_penghu.world.combat.doctrine import LABELS
 from fall_of_penghu.world.entities import (
     Entities,
     FACTION_PLAYER,
     GameObject,
-    SetDoctrine,
     WreckObject,
 )
 from fall_of_penghu.debug_palette import DebugPalette
 from fall_of_penghu.engage_palette import EngagePalette
+from fall_of_penghu.display_palette import DisplayPalette
+from fall_of_penghu.range_palette import RangePalette
 from fall_of_penghu.vision_palette import VisionPalette
 from fall_of_penghu.world.entities.transport import PORT_CAP
 from fall_of_penghu.world.perception import Perception, format_calendar_span
@@ -28,11 +29,8 @@ BTN_W = 52
 BTN_H = 26
 BTN_GAP = 6
 MODE_BTN_W = 28
-DOC_BTN_W = 44
 CLOCK_W = 148
 MODE_GAP = 18
-ENGAGE_BOX = 14
-ENGAGE_HIT_W = 72
 PORT_BTN_W = 86
 PORT_BTN_H = 24
 PORT_HINT = {
@@ -52,9 +50,6 @@ class Hud:
         self.small = pygame.font.SysFont("consolas", 14)
         self._buttons: list[tuple[pygame.Rect, float]] = []
         self._mode_buttons: list[tuple[pygame.Rect, bool]] = []
-        self._doctrine_buttons: list[tuple[pygame.Rect, str]] = []
-        self._engage_box = pygame.Rect(0, 0, ENGAGE_BOX, ENGAGE_BOX)
-        self._engage_hit = pygame.Rect(0, 0, ENGAGE_HIT_W, BTN_H)
         self._panel_h = PANEL_H
         self._icons = IconStore()
         self._port_buttons: list[tuple[pygame.Rect, str]] = []
@@ -70,6 +65,8 @@ class Hud:
         palette: DebugPalette | None = None,
         engage: EngagePalette | None = None,
         vision: VisionPalette | None = None,
+        ranges: RangePalette | None = None,
+        display: DisplayPalette | None = None,
         selection: Selection | None = None,
         entities: Entities | None = None,
         camera: Camera | None = None,
@@ -84,6 +81,10 @@ class Hud:
         if engage is not None and engage.hits(x, y, selection, entities):
             return True
         if vision is not None and vision.hits(x, y):
+            return True
+        if ranges is not None and ranges.hits(x, y):
+            return True
+        if display is not None and display.hits(x, y):
             return True
         self._layout_port_menu(selection, entities, camera, screen_w, screen_h)
         for rect, _cmd in self._port_buttons:
@@ -107,34 +108,6 @@ class Hud:
             (pygame.Rect(x, y, MODE_BTN_W, BTN_H), False),
             (pygame.Rect(x + MODE_BTN_W + BTN_GAP, y, MODE_BTN_W, BTN_H), True),
         ]
-        x = self._mode_buttons[-1][0].right + MODE_GAP
-        self._engage_hit = pygame.Rect(x, y, ENGAGE_HIT_W, BTN_H)
-        self._engage_box = pygame.Rect(
-            x,
-            y + (BTN_H - ENGAGE_BOX) // 2,
-            ENGAGE_BOX,
-            ENGAGE_BOX,
-        )
-
-    def _layout_doctrine(
-        self,
-        selection: Selection | None,
-        entities: Entities | None,
-    ) -> None:
-        self._doctrine_buttons = []
-        if selection is None or entities is None:
-            return
-        batteries = self._selected_batteries(selection, entities)
-        if not batteries:
-            return
-        x = self._engage_hit.right + MODE_GAP
-        y = (PANEL_H - BTN_H) // 2
-        kinds = {obj.kind for obj in batteries}
-        for doctrine in doctrines_for(kinds):
-            if doctrine in (FIRE, HOLD):
-                continue
-            self._doctrine_buttons.append((pygame.Rect(x, y, DOC_BTN_W, BTN_H), doctrine))
-            x += DOC_BTN_W + BTN_GAP
 
     @staticmethod
     def _selected_port(
@@ -217,17 +190,6 @@ class Hud:
             for i, cmd in enumerate(cmds)
         ]
 
-    @staticmethod
-    def _selected_batteries(
-        selection: Selection, entities: Entities
-    ) -> list[GameObject]:
-        out: list[GameObject] = []
-        for oid in selection.selected:
-            obj = entities.get(oid)
-            if is_battery(obj) and obj.faction == FACTION_PLAYER:
-                out.append(obj)
-        return out
-
     def handle_event(
         self,
         event: pygame.event.Event,
@@ -243,7 +205,6 @@ class Hud:
         if event.type != pygame.MOUSEBUTTONDOWN or event.button != 1:
             return False
         self._layout(camera.debug_mode)
-        self._layout_doctrine(selection, entities)
         for rect, speed in self._buttons:
             if rect.collidepoint(event.pos):
                 clock.set_speed(speed)
@@ -252,18 +213,6 @@ class Hud:
             if rect.collidepoint(event.pos):
                 camera.radar_mode = radar
                 return True
-        if self._engage_hit.collidepoint(event.pos):
-            camera.show_engagement = not camera.show_engagement
-            return True
-        if entities is not None and selection is not None:
-            for rect, doctrine in self._doctrine_buttons:
-                if rect.collidepoint(event.pos):
-                    for obj in self._selected_batteries(selection, entities):
-                        entities.dispatch(
-                            SetDoctrine(object_id=obj.id, doctrine=doctrine),
-                            as_faction=FACTION_PLAYER,
-                        )
-                    return True
         self._layout_port_menu(selection, entities, camera, screen_w, screen_h)
         if selection is not None:
             port = self._selected_port(selection, entities)
@@ -336,12 +285,13 @@ class Hud:
         palette: DebugPalette | None = None,
         engage: EngagePalette | None = None,
         vision: VisionPalette | None = None,
+        ranges: RangePalette | None = None,
+        display: DisplayPalette | None = None,
         heat_probe: tuple[float, float, float] | None = None,
         defeated: bool = False,
     ) -> None:
         debug = camera.debug_mode
         self._layout(debug)
-        self._layout_doctrine(selection, entities)
         self._layout_port_menu(selection, entities, camera, screen_w, screen_h)
         pal = palette_at(clock.time_of_day)
         ink = pal["hud"]
@@ -385,47 +335,12 @@ class Hud:
                 ),
             )
 
-        pygame.draw.rect(bar, (*ink, 90), self._engage_box, 1)
-        if camera.show_engagement:
-            inner = self._engage_box.inflate(-4, -4)
-            pygame.draw.rect(bar, (*ink, 210), inner)
-        rng = self.small.render("RNG  G", True, ink)
-        bar.blit(
-            rng,
-            (
-                self._engage_box.right + 6,
-                (PANEL_H - rng.get_height()) // 2,
-            ),
-        )
-
-        current_doctrine = None
-        if selection is not None and entities is not None:
-            found = {
-                getattr(obj, "doctrine", None)
-                for obj in self._selected_batteries(selection, entities)
-            }
-            if len(found) == 1:
-                current_doctrine = found.pop()
-        for rect, doctrine in self._doctrine_buttons:
-            selected = doctrine == current_doctrine
-            fill = (ink[0], ink[1], ink[2], 55 if selected else 18)
-            pygame.draw.rect(bar, fill, rect, border_radius=3)
-            pygame.draw.rect(bar, (*ink, 200 if selected else 90), rect, 1, border_radius=3)
-            text = self.small.render(LABELS[doctrine], True, ink)
-            bar.blit(
-                text,
-                (
-                    rect.x + (rect.w - text.get_width()) // 2,
-                    rect.y + (rect.h - text.get_height()) // 2,
-                ),
-            )
-
         if perception is not None and entities is not None and selection is not None:
             ammo = _selection_ammo(
                 selection, entities, perception.catalog, clock.simulation_time
             )
             if ammo:
-                last = self._doctrine_buttons[-1][0] if self._doctrine_buttons else self._engage_hit
+                last = self._mode_buttons[-1][0]
                 label = self.small.render(ammo, True, ink)
                 bar.blit(
                     label,
@@ -584,6 +499,10 @@ class Hud:
             )
         if vision is not None:
             vision.blit(renderer, mouse_screen, ink, screen_w, screen_h)
+        if ranges is not None:
+            ranges.blit(renderer, mouse_screen, ink, screen_w, screen_h)
+        if display is not None:
+            display.blit(renderer, mouse_screen, ink, screen_w, screen_h)
 
     def _blit_port_menu(
         self,

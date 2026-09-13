@@ -14,10 +14,12 @@ from fall_of_penghu.ai.china_util import (
     MAX_ASSAULT_SHIPS,
     MAX_LANDING_SHIPS,
     MAX_SHORE_BOATS,
+    landing_ship_cap,
     SHIP_SPAWN_SIM,
     border_xy,
     capture_islands,
     china_by_island,
+    china_owned,
     island_has_foe,
     island_stand,
     islands_linked,
@@ -62,14 +64,14 @@ class NavalOps:
         self._occupy_quiet(world, ships)
         self._drive_hops(world, intel)
         self._drive_reloading(world, intel, ships)
-        active = _assault_ships(ships)
+        active = _assault_ships(world, ships)
         for ship in ships:
             self._step_ship(world, ship, intel, ships, active)
 
     def _spawn_landing_ships(self, world: World) -> None:
         now = world.clock.simulation_time
         alive = _landing_ships(world)
-        if len(alive) >= MAX_LANDING_SHIPS:
+        if len(alive) >= landing_ship_cap(world):
             return
         if self._ship_seq > 0 and now < self._next_ship_sim:
             return
@@ -128,7 +130,7 @@ class NavalOps:
         if len(self._occupy_ids) >= MAX_OCCUPY:
             return
         for iid in capture_islands(world):
-            if iid not in inhabited or held.get(iid):
+            if iid not in inhabited or held.get(iid) or china_owned(world, iid):
                 continue
             if island_has_foe(world, iid):
                 continue
@@ -244,7 +246,7 @@ class NavalOps:
         now = world.clock.simulation_time
         donors = [
             ship
-            for ship in _assault_ships(ships)
+            for ship in _assault_ships(world, ships)
             if ship.magazine > 0 and now >= float(ship.weapon_ready_sim or 0.0)
         ]
         idle = sorted(_idle_shore_boats(world), key=lambda boat: boat.id)
@@ -435,14 +437,14 @@ def _landing_ships(world: World) -> list[DynamicObject]:
     return out
 
 
-def _assault_ships(ships: list[DynamicObject]) -> list[DynamicObject]:
+def _assault_ships(world: World, ships: list[DynamicObject]) -> list[DynamicObject]:
     ready = [
         ship
         for ship in ships
         if (ship.task or "station") == "station" and ship.magazine > 0
     ]
     ready.sort(key=lambda ship: ship.id)
-    return ready[:MAX_ASSAULT_SHIPS]
+    return ready[:max(MAX_ASSAULT_SHIPS, landing_ship_cap(world))]
 
 
 def _stage_point(
@@ -532,6 +534,8 @@ def _surplus_unit(
                 continue
             if getattr(obj, "stowed", False):
                 continue
+            if getattr(obj, "mobility", "") != "land":
+                continue
             at = islands.at(obj.x, obj.y)
             if at == island:
                 fighting = True
@@ -543,7 +547,7 @@ def _surplus_unit(
                 continue
             if unit.task in ("shuttle", "garrison"):
                 continue
-            if not is_surplus(unit, island, assault, held):
+            if not is_surplus(unit, island, assault, held, world):
                 continue
             d = hypot(unit.x - dest[0], unit.y - dest[1])
             if d < best_d:

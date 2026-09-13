@@ -29,6 +29,7 @@ class Selection:
         self.artillery_aim = False
         self.pick_targets = False
         self.waypoints: dict[str, list[tuple[float, float]]] = {}
+        self.visible_kinds: set[str] | None = None
 
     def clear(self) -> None:
         self.selected.clear()
@@ -79,6 +80,8 @@ class Selection:
                 obj.faction != FACTION_PLAYER or obj.kind in ("intercept", "tracer", "shell")
             ):
                 continue
+            if not _kind_shown(obj.kind, self.visible_kinds):
+                continue
             sx, sy = camera.world_to_screen(obj.x, obj.y, screen_w, screen_h)
             if left <= sx <= right and top <= sy <= bottom:
                 hits.add(obj.id)
@@ -112,6 +115,8 @@ class Selection:
                 continue
             if obj.kind in SHOT_KINDS or is_static_kind(obj.kind):
                 continue
+            if not _kind_shown(obj.kind, self.visible_kinds):
+                continue
             if getattr(obj, "stowed", False) or not obj.active:
                 continue
             sx, sy = camera.world_to_screen(obj.x, obj.y, screen_w, screen_h)
@@ -136,6 +141,7 @@ class Selection:
             sx,
             sy,
             prefer_own=True,
+            kinds=self.visible_kinds,
         )
         self.hover_id = hit.id if hit else None
 
@@ -152,6 +158,7 @@ def pick_at(
     source: list[GameObject] | None = None,
     include_intercept: bool = False,
     prefer_own: bool = True,
+    kinds: set[str] | None = None,
 ) -> GameObject | None:
     pick_r = max(PICK_PX, 8.0)
     own_r = max(PICK_OWN_PX, pick_r)
@@ -166,6 +173,8 @@ def pick_at(
         if obj.kind in ("intercept", "tracer", "shell") and not include_intercept:
             continue
         if getattr(obj, "stowed", False):
+            continue
+        if not _kind_shown(obj.kind, kinds):
             continue
         osx, osy = camera.world_to_screen(obj.x, obj.y, screen_w, screen_h)
         d = (osx - sx) * (osx - sx) + (osy - sy) * (osy - sy)
@@ -188,3 +197,11 @@ def pick_at(
     ):
         return best_own
     return best_other if best_other is not None else best_own
+
+
+def _kind_shown(kind: str, kinds: set[str] | None) -> bool:
+    if kinds is None:
+        return True
+    if kind in SHOT_KINDS:
+        return True
+    return kind in kinds

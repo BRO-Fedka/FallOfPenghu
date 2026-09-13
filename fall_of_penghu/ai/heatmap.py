@@ -121,7 +121,10 @@ class IslandHeatmaps:
         far_w = catalog.landing_far_weight
         hot_lim = catalog.landing_hot_threshold
         best: BeachPick | None = None
+        owned = world.control.china_islands()
         for iid, grid in self.grids.items():
+            if iid in owned:
+                continue
             pick = _best_coastal(grid, cold_w, far_w)
             if pick is None:
                 continue

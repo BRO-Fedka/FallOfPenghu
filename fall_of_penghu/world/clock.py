@@ -9,8 +9,8 @@ CALENDAR_DAY_S = 86_400.0
 DAYLIGHT_START = 5.0 / 24.0
 DAYLIGHT_END = 18.25 / 24.0
 
-# F1–F6. F7 (32x) is debug-only.
-SPEEDS = (0.0, 1.0, 2.0, 4.0, 8.0, 16.0)
+# F1… for each entry. F7 (32x) is debug-only.
+SPEEDS = (0.0, 0.5, 1.0, 4.0, 16.0)
 DEBUG_SPEED = 32.0
 # Matches TOD keyframes: day from 05:00 through the start of dusk.
 DAY_START = 5.0 / 24.0

@@ -18,13 +18,14 @@ SCOUT_LAUNCH_S = 10.0
 LAUNCH_BURST = 5
 SCOUT_SPAWN_M = 700.0
 SIT_M = 50.0
+FOLLOW_HOLD_M = 80.0
 COVER_FRAC = 0.85
 SWEEP_DONE_M = 80.0
 AA_PAD_M = 250.0
 AA_HEAT = 0.35
 KILL_ZONE_S = 900.0
 SEG_SAMPLE_M = 180.0
-MAX_SWEEP_VERTS = 80
+MAX_SWEEP_VERTS = 140
 SWEEP_LEGS = 24
 CREEP_STEPS_M = (3_000.0, 6_000.0, 10_000.0)
 CREEP_GAIN_M = 300.0
@@ -96,7 +97,7 @@ class IntelOps:
 
     def _step_scouts(self, world: World) -> None:
         catalog = world.catalog
-        cap = catalog.scout_count
+        cap = catalog.scout_cap(world.clock.calendar_day)
         n_patrol = min(catalog.scout_patrol_count, cap)
         n_search = max(0, cap - n_patrol)
         now = world.clock.simulation_time
@@ -109,11 +110,17 @@ class IntelOps:
         claimed = _follow_claimed(scouts)
         posts = _cluster_posts(world, catalog, rings, self, claimed) if dusk else []
         used_posts: set[int] = set()
-        patrol, search = _split_roles(scouts, n_patrol)
+        watch, free = _split_watch(scouts)
+        patrol, search = _split_roles(free, n_patrol)
         _bind_slots(patrol, n_patrol)
         _bind_slots(search, max(1, n_search))
         loop = _reachable_loop(self._sweeps, rings, self) or self._circuit
         self._hand_off(world, search, claimed, now, rings)
+        for scout in watch:
+            self._drive_search(
+                world, scout, now, dusk, max(0, _slot_of(scout)), n_search,
+                posts, used_posts, claimed, rings,
+            )
         for scout in patrol:
             self._drive_circuit(world, scout, now, rings, loop, n_patrol)
         for scout in search:
@@ -127,7 +134,15 @@ class IntelOps:
                 "sweep_k": int(getattr(scout, "sweep_k", 0) or 0),
                 "follow_id": scout.strike_id if scout.task == "follow" else None,
             }
-            self._progress[slot] = int(getattr(scout, "sweep_k", 0) or 0)
+            if scout.task != "follow":
+                self._progress[slot] = int(getattr(scout, "sweep_k", 0) or 0)
+        for scout in watch:
+            self._jobs[scout.id] = {
+                "role": "follow",
+                "slot": max(0, _slot_of(scout)),
+                "sweep_k": int(getattr(scout, "sweep_k", 0) or 0),
+                "follow_id": scout.strike_id,
+            }
         if now < self._scout_ready_sim:
             return
         carrier = _best_carrier(world)
@@ -138,13 +153,14 @@ class IntelOps:
         blocked_p: set[int] = set()
         while launched < LAUNCH_BURST:
             alive = _china_kind(world, "scout")
-            if len(alive) >= cap:
+            free = [obj for obj in alive if obj.task != "follow"]
+            if len(free) >= cap:
                 break
             patrol_used = {
-                _slot_of(obj) for obj in alive if getattr(obj, "role", "") == "circuit"
+                _slot_of(obj) for obj in free if getattr(obj, "role", "") == "circuit"
             } | blocked_p
             search_used = {
-                _slot_of(obj) for obj in alive if getattr(obj, "role", "") != "circuit"
+                _slot_of(obj) for obj in free if getattr(obj, "role", "") != "circuit"
             }
             miss_p = [i for i in range(n_patrol) if i not in patrol_used]
             miss_s = [i for i in range(n_search) if i not in search_used]
@@ -250,18 +266,27 @@ class IntelOps:
     def _search_path(
         self, search_slot: int, n_search: int, sweep_k: int
     ) -> tuple[tuple[float, float], ...]:
-        """Launch destination only: a slice of the whole archipelago snake."""
-        flat = self._flat
-        if not flat or n_search <= 0:
-            return ()
+        """Launch toward this slot's islands, south ones first so they are not skipped."""
+        mine = self._slot_islands(search_slot, n_search)
+        if not mine:
+            return self._flat
+        lanes = self.forest.lanes.get(mine[0]) or ()
+        if sweep_k % 2:
+            return tuple(reversed(lanes))
+        return lanes
+
+    def _slot_islands(self, search_slot: int, n_search: int) -> list[int]:
+        """Round-robin from south to north. Slot 0 always owns the southernmost wood."""
+        ranked = sorted(
+            ((iid, path) for iid, path in self._sweeps if path),
+            key=lambda row: (min(pt[1] for pt in row[1]), row[0]),
+        )
+        ids = [iid for iid, _ in ranked]
+        if not ids or n_search <= 0:
+            return []
         n = max(1, n_search)
         slot = search_slot % n
-        lo = len(flat) * slot // n
-        hi = len(flat) * (slot + 1) // n
-        chunk = flat[lo:hi] or flat
-        if sweep_k % 2:
-            chunk = tuple(reversed(chunk))
-        return chunk
+        return [iid for i, iid in enumerate(ids) if i % n == slot]
 
     def _sweep_plans(
         self,
@@ -272,29 +297,27 @@ class IntelOps:
         sweep_k: int,
         limit: int = 3,
     ) -> list[tuple[tuple[float, float], ...]]:
-        """Slot's island first, then nearer fallbacks it can actually reach."""
-        cands = self._sweep_cands(scout, rings)
+        """This slot's islands first (south reserved), then any leftover wood."""
+        assigned = set(self._slot_islands(slot, n_search))
+        cands = self._sweep_cands(scout, rings, assigned)
         if not cands:
-            return []
-        pick = slot % max(1, n_search)
+            cands = self._sweep_cands(scout, rings, None)
         out: list[tuple[tuple[float, float], ...]] = []
-        for j in range(min(limit, len(cands))):
-            lanes = cands[(pick + j) % len(cands)][1]
+        for _key, lanes in cands[:limit]:
             out.append(self._share(scout, lanes, slot, n_search, sweep_k))
         return out
 
     def _sweep_cands(
-        self, scout: DynamicObject, rings: list[Ring]
+        self,
+        scout: DynamicObject,
+        rings: list[Ring],
+        assigned: set[int] | None,
     ) -> list[tuple[tuple[int, int, int], tuple[tuple[float, float], ...]]]:
-        """Finish the nearest island before moving on.
-
-        Sweeping the whole archipelago as one list made drones commit to 40 km
-        transits and abandon half-searched forests. Islands are taken nearest
-        first; drones split one island by slot so their lanes never overlap.
-        """
         now = self._now
         cands: list[tuple[tuple[int, int, int], tuple[tuple[float, float], ...]]] = []
         for iid, lanes in self.forest.lanes.items():
+            if assigned is not None and iid not in assigned:
+                continue
             todo = tuple(pt for pt in lanes if self.forest.is_pending(pt, now))
             if not todo:
                 continue
@@ -303,8 +326,9 @@ class IntelOps:
             )
             if not open_lanes:
                 continue
+            south = min(pt[1] for pt in open_lanes)
             near = min(hypot(pt[0] - scout.x, pt[1] - scout.y) for pt in open_lanes)
-            cands.append(((int(near / 4_000.0), -len(open_lanes), iid), open_lanes))
+            cands.append(((south, int(near / 4_000.0), iid), open_lanes))
         cands.sort(key=lambda row: row[0])
         return cands
 
@@ -316,14 +340,7 @@ class IntelOps:
         n_search: int,
         sweep_k: int,
     ) -> tuple[tuple[float, float], ...]:
-        n = max(1, n_search)
-        pick = slot % n
-        if len(lanes) < 2 * n:
-            share = lanes
-        else:
-            lo = len(lanes) * pick // n
-            hi = len(lanes) * (pick + 1) // n
-            share = lanes[lo:hi] or lanes
+        share = lanes
         if sweep_k % 2:
             share = tuple(reversed(share))
         return _from_nearest(scout, share)[:SWEEP_LEGS]
@@ -343,14 +360,13 @@ class IntelOps:
 
     def _cull_scouts(self, world: World, cap: int) -> list[DynamicObject]:
         scouts = _china_kind(world, "scout")
-        if len(scouts) <= cap:
+        watch = [obj for obj in scouts if obj.task == "follow"]
+        free = [obj for obj in scouts if obj.task != "follow"]
+        if len(free) <= cap:
             return scouts
         ranked = sorted(
-            scouts,
-            key=lambda obj: (
-                0 if obj.task in ("follow", "circuit") else 1,
-                obj.id,
-            ),
+            free,
+            key=lambda obj: (0 if getattr(obj, "role", "") == "circuit" else 1, obj.id),
         )
         keep = ranked[:cap]
         drop = ranked[cap:]
@@ -362,9 +378,9 @@ class IntelOps:
         self.log.emit(
             world.clock.simulation_time,
             "scout-cull",
-            f"keep {len(keep)} drop {len(drop)}",
+            f"keep {len(keep) + len(watch)} drop {len(drop)}",
         )
-        return keep
+        return watch + keep
 
     def _drive_circuit(
         self,
@@ -407,7 +423,7 @@ class IntelOps:
         else:
             anchor = (0.0, 0.0)
         reach = (world.catalog.engagement_m("aaw") or 6000.0) + AA_PAD_M
-        n = max(1, world.catalog.scout_count)
+        n = max(1, world.catalog.scout_cap(world.clock.calendar_day))
         ang = (slot % n) * (2.0 * pi / n)
         cand = (anchor[0] + cos(ang) * reach, anchor[1] + sin(ang) * reach)
         return _push_out(cand, rings, self)
@@ -498,7 +514,9 @@ class IntelOps:
             scout.sweep_k = k
             if _bail_out(world, scout, rings, self):
                 return
-            cands = self._sweep_cands(scout, rings)
+            cands = self._sweep_cands(
+                scout, rings, set(self._slot_islands(slot, n_search))
+            ) or self._sweep_cands(scout, rings, None)
             goal = cands[0][1][0] if cands else None
             if goal is not None and _creep(world, scout, rings, self, goal):
                 return
@@ -625,34 +643,22 @@ def _watch_xy(
     intel: IntelOps,
     catalog,
 ) -> tuple[float, float] | None:
-    cover = world.perception.cover
-    vis = catalog.scaled_range_m(
-        "visual_advanced",
-        target.kind,
-        world.clock.darkness,
-        emitter_kind="scout",
-    ) or 6000.0
-    if cover is not None:
-        vis *= catalog.cover_factor(
-            "visual_advanced", cover.at(target.x, target.y, "ground")
-        )
-    stand = min(catalog.scout_standoff_m, vis * 0.8)
-    if stand < 80.0:
-        return None
+    stand = FOLLOW_HOLD_M
     prev = getattr(scout, "patrol_xy", None)
     best = None
     best_key = None
     for i in range(16):
         ang = i * (2.0 * pi / 16.0)
         cand = (target.x + cos(ang) * stand, target.y + sin(ang) * stand)
-        if _aa_hot(cand[0], cand[1], rings, intel):
-            continue
+        hot = 1 if _aa_known(cand[0], cand[1], rings) else 0
         d_prev = 0.0 if prev is None else hypot(cand[0] - prev[0], cand[1] - prev[1])
-        key = (d_prev, hypot(cand[0] - scout.x, cand[1] - scout.y))
+        key = (hot, d_prev, hypot(cand[0] - scout.x, cand[1] - scout.y))
         if best_key is None or key < best_key:
             best = cand
             best_key = key
-    return best
+    if best is None:
+        best = (target.x + stand, target.y)
+    return _push_out(best, rings, intel)
 
 
 def _locked_target(world: World, scout: DynamicObject):
@@ -667,7 +673,7 @@ def _followable(world: World, sid: str):
         return None
     if getattr(obj, "stowed", False) or obj.kind in SHOT_KINDS:
         return None
-    if obj.kind not in GROUND_FOLLOW:
+    if obj.kind not in GROUND_FOLLOW and obj.kind not in GROUND_AA:
         return None
     return obj
 
@@ -695,7 +701,7 @@ def _forest_contact(
     for obj in world.perception.visible_objects(FACTION_CHINA):
         if obj.faction != FACTION_PLAYER or not obj.active:
             continue
-        if obj.kind not in GROUND_FOLLOW:
+        if obj.kind not in GROUND_FOLLOW and obj.kind not in GROUND_AA:
             continue
         if getattr(obj, "stowed", False):
             continue
@@ -703,8 +709,6 @@ def _forest_contact(
             continue
         owner = claimed.get(obj.id)
         if owner and owner != scout.id:
-            continue
-        if _aa_hot(obj.x, obj.y, rings, intel):
             continue
         d = hypot(obj.x - scout.x, obj.y - scout.y)
         if d <= best_d:
@@ -1326,6 +1330,14 @@ def _fly_verts(
         SetRoute(object_id=unit.id, mode="manual", vertices=tuple(live)),
         as_faction=FACTION_CHINA,
     )
+
+
+def _split_watch(
+    scouts: list[DynamicObject],
+) -> tuple[list[DynamicObject], list[DynamicObject]]:
+    watch = [obj for obj in scouts if obj.task == "follow"]
+    free = [obj for obj in scouts if obj.task != "follow"]
+    return watch, free
 
 
 def _split_roles(

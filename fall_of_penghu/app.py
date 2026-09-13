@@ -14,11 +14,12 @@ from fall_of_penghu.render.dynamic import DynamicRenderer
 from fall_of_penghu.selection import Selection
 from fall_of_penghu.debug_palette import DebugPalette
 from fall_of_penghu.engage_palette import EngagePalette
+from fall_of_penghu.range_palette import RangePalette
 from fall_of_penghu.ui import Hud
 from fall_of_penghu.vision_palette import VisionPalette
+from fall_of_penghu.display_palette import DisplayPalette
 from fall_of_penghu.world import FACTION_PLAYER, World
 from fall_of_penghu.world.events import ContactNotice
-from fall_of_penghu.world.perception.lookout import faction_on_islands
 
 ROOT = Path(__file__).resolve().parent.parent
 MAP_DIR = ROOT / "penghu_map_v1"
@@ -60,22 +61,32 @@ def run() -> None:
     palette.refresh(world.catalog)
     engage = EngagePalette()
     vision = VisionPalette()
+    ranges = RangePalette()
+    units = DisplayPalette()
+    units.refresh(world.catalog)
     dynamic = DynamicRenderer()
     chat = ChatLog()
     china = ChinaDirector(world)
     china.step(world)
     world.perception.step(world)
-    defeated = False
 
     while not controls.quit:
         dt_wall = frame_clock.tick(6000) / 1000.0
         screen_w, screen_h = pygame.display.get_window_size()
         mouse = pygame.mouse.get_pos()
+        selection.visible_kinds = units.enabled
 
         for event in pygame.event.get():
             if camera.debug_mode and palette.handle_event(event, screen_w, screen_h):
                 continue
             if vision.handle_event(event, screen_w, screen_h):
+                continue
+            if ranges.handle_event(event, screen_w, screen_h):
+                continue
+            if units.handle_event(event, screen_w, screen_h):
+                continue
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_g:
+                ranges.toggle()
                 continue
             if engage.handle_event(
                 event,
@@ -106,6 +117,8 @@ def run() -> None:
                 palette,
                 engage,
                 vision,
+                ranges,
+                units,
                 selection,
                 world.entities,
                 camera,
@@ -123,6 +136,8 @@ def run() -> None:
                     palette,
                     engage,
                     vision,
+                    ranges,
+                    units,
                     selection,
                     world.entities,
                     camera,
@@ -164,6 +179,8 @@ def run() -> None:
             palette,
             engage,
             vision,
+            ranges,
+            units,
             selection,
             world.entities,
             camera,
@@ -175,28 +192,12 @@ def run() -> None:
             selection.hover_id = None
 
         world.clock.advance(dt_wall)
-        if not defeated:
-            world.entities.step(world.clock.dt_sim)
-            world.transport.step(world)
-            china.step(world)
-            world.perception.step(world)
-            world.combat.step(world)
-            islands = None
-            if world.entities.planner is not None:
-                islands = world.entities.planner.land.islands
-            if not faction_on_islands(islands, world.entities.items, FACTION_PLAYER):
-                defeated = True
-                world.clock.set_speed(0.0)
-                chat.push(
-                    ContactNotice(
-                        faction=FACTION_PLAYER,
-                        object_ids=(),
-                        x=camera.x,
-                        y=camera.y,
-                        text="Defeat — no player units remain on the islands",
-                        slow_time=False,
-                    )
-                )
+        world.entities.step(world.clock.dt_sim)
+        world.transport.step(world)
+        world.control.step(world)
+        china.step(world)
+        world.perception.step(world)
+        world.combat.step(world)
         for notice in world.drain_notices():
             if notice.faction != FACTION_PLAYER:
                 continue
@@ -219,6 +220,8 @@ def run() -> None:
             perception=world.perception,
             now_sim=world.clock.simulation_time,
             vision_on=vision.enabled,
+            range_on=ranges.enabled,
+            show_kinds=units.enabled,
             mouse_world=mouse_world,
             heatmaps=china.intel.heat if camera.debug_mode else None,
         )
@@ -250,8 +253,9 @@ def run() -> None:
             palette=palette,
             engage=engage,
             vision=vision,
+            ranges=ranges,
+            display=units,
             heat_probe=heat_probe,
-            defeated=defeated,
         )
         renderer.present()
 

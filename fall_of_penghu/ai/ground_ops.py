@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 
 from fall_of_penghu.ai.china_util import (
     china_by_island,
+    china_owned,
     capture_islands,
     island_has_foe,
     island_stand,
@@ -63,7 +64,7 @@ class GroundOps:
                 island = near
             last = float(getattr(obj, "task_sim", 0.0) or 0.0)
             if obj.kind == "artillery" and obj.task == "deployed":
-                if not is_surplus(obj, island, assault, held):
+                if not is_surplus(obj, island, assault, held, world):
                     continue
                 obj.task = ""
             if obj.moving and now - last < GROUND_REPATH_S:
@@ -107,7 +108,9 @@ def _push_dest(
     foe = _nearest_foe(world, unit, island)
     if foe is not None:
         return (foe.x, foe.y)
-    if unit.kind == "infantry":
+    if hop is not None and china_owned(world, island):
+        return hop
+    if unit.kind == "infantry" and not china_owned(world, island):
         lane = _forest_dest(unit, island, intel)
         if lane is not None:
             return lane
@@ -162,9 +165,13 @@ def _assign_garrison(
                 for unit in units:
                     if unit.id in busy or unit.id in used or unit.kind != kind:
                         continue
-                    if not is_surplus(unit, island, assault, held):
+                    if not is_surplus(unit, island, assault, held, world):
                         continue
-                    if kind == "infantry" and _forest_dest(unit, island, intel):
+                    if (
+                        kind == "infantry"
+                        and not china_owned(world, island)
+                        and _forest_dest(unit, island, intel)
+                    ):
                         continue
                     d = hypot(unit.x - dest[0], unit.y - dest[1])
                     if d < best_d:
@@ -221,11 +228,33 @@ def _enroute_kinds(world: World, dest_iid: int) -> set[str]:
 def _forest_dest(
     unit: DynamicObject, island: int, intel: IntelOps
 ) -> tuple[float, float] | None:
-    """Nearest forest lane never looked at. Lanes barred to drones come first."""
-    todo = intel.forest.ground_debt(island) or intel.forest.pending(island)
-    if not todo:
+    """Next forest lane on this island's snake, not the geographically nearest.
+
+    Nearest-first made squads hop across the wood and skip whole rows. Walking
+    the baked order (debt first) is the sequential comb the player asked for.
+    """
+    lanes = intel.forest.lanes.get(island) or ()
+    if not lanes:
         return None
-    return min(todo, key=lambda pt: hypot(pt[0] - unit.x, pt[1] - unit.y))
+    now = getattr(intel, "_now", None)
+    debt = set(intel.forest.ground_debt(island, now=now))
+    open_l = set(intel.forest.pending(island, now=now))
+    want = debt or open_l
+    if not want:
+        return None
+    idx = int(getattr(unit, "sweep_i", 0) or 0)
+    if 0 <= idx < len(lanes) and hypot(unit.x - lanes[idx][0], unit.y - lanes[idx][1]) < SWEEP_ARRIVE_M:
+        idx += 1
+    order = [i for i, pt in enumerate(lanes) if pt in want]
+    if not order:
+        return None
+    for start in (idx, 0):
+        for i in order:
+            if i >= start:
+                unit.sweep_i = i
+                return lanes[i]
+    unit.sweep_i = order[0]
+    return lanes[order[0]]
 
 
 def _sweep_cell(world: World, unit: DynamicObject, island: int, intel: IntelOps):

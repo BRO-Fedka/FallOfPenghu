@@ -14,7 +14,7 @@ STALE_S = 2_400.0
 MARK_EVERY_S = 2.0
 BUCKET_M = 500.0
 PROBE_N = 3
-LANE_OVERLAP = 0.85
+LANE_OVERLAP = 0.70
 AIR_EYES = {"scout": "visual_advanced", "drone": "visual_primitive"}
 GROUND_EYES = {
     "infantry": "visual_primitive",
@@ -55,18 +55,23 @@ class ForestCoverage:
             return
         cell = max(50.0, world.catalog.heat_cell_m)
         self.lane_m = _lane_m(world, cell)
-        rows = max(1, int(ceil(cell / self.lane_m)))
+        step = max(80.0, self.lane_m)
+        cols = max(1, int(ceil(cell / step)))
         for grid in heat.grids.values():
             pts: list[tuple[float, float]] = []
             for i, land in enumerate(grid.land):
                 if not land or not _touches_forest(cover, grid.center(i), cell):
                     continue
                 cx, cy = grid.center(i)
-                for j in range(rows):
-                    pts.append((cx, cy - cell / 2.0 + cell * (j + 0.5) / rows))
+                for gx in range(cols):
+                    for gy in range(cols):
+                        x = cx - cell / 2.0 + cell * (gx + 0.5) / cols
+                        y = cy - cell / 2.0 + cell * (gy + 0.5) / cols
+                        if cover.at(x, y, "ground") == "forest":
+                            pts.append((x, y))
             if not pts:
                 continue
-            lanes = tuple(_snake(pts, cell / rows))
+            lanes = tuple(_snake(pts, step))
             self.lanes[grid.island] = lanes
             self.seen[grid.island] = [0.0] * len(lanes)
             self.ever[grid.island] = [False] * len(lanes)
@@ -210,10 +215,11 @@ def _forest_reach(catalog, channel: str, kind: str, darkness: float) -> float:
 
 
 def _lane_m(world: World, cell: float) -> float:
+    """Spacing a scout can actually see through canopy, with overlap."""
     reach = _forest_reach(world.catalog, "visual_advanced", "scout", 0.0)
     if reach <= 0.0:
-        return cell
-    return max(120.0, min(cell, 2.0 * reach * LANE_OVERLAP))
+        return min(cell, 160.0)
+    return max(80.0, reach * LANE_OVERLAP)
 
 
 def _touches_forest(cover, center: tuple[float, float], cell: float) -> bool:

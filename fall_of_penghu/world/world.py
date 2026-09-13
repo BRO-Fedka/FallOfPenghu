@@ -4,6 +4,7 @@ from pathlib import Path
 
 from fall_of_penghu.world.clock import Clock
 from fall_of_penghu.world.combat import Combat
+from fall_of_penghu.world.control import IslandControl
 from fall_of_penghu.world.entities import Entities
 from fall_of_penghu.world.entities.transport import Transport
 from fall_of_penghu.world.events import ContactNotice
@@ -31,6 +32,7 @@ class World:
         self.perception = Perception(self.catalog)
         self.combat = Combat(seed)
         self.transport = Transport()
+        self.control = IslandControl()
         self.entities._view = self.perception.visible_objects
         self.notices: list[ContactNotice] = []
 
@@ -44,12 +46,14 @@ class World:
         world.transport.bind(world)
         world.entities.bind_transport(world.transport)
         world.transport.seed(world)
+        world.control.bake(world)
         world.perception.step(world)
         return world
 
     def step(self) -> None:
         self.entities.step(self.clock.dt_sim)
         self.transport.step(self)
+        self.control.step(self)
         self.perception.step(self)
         self.combat.step(self)
 

@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from fall_of_penghu.world.entities.game_object import GameObject
+from fall_of_penghu.world.entities.game_object import FACTION_PLAYER, GameObject
+from fall_of_penghu.world.entities.kinds import SHOT_KINDS, is_static_kind
 
 if TYPE_CHECKING:
     from fall_of_penghu.world.world import World
@@ -21,6 +22,15 @@ def wreck(obj: GameObject, world: World | None = None) -> None:
         cargo = world.entities.get(cargo_id)
         if cargo is not None:
             wreck(cargo, world)
+    if (
+        world is not None
+        and obj.faction == FACTION_PLAYER
+        and obj.kind not in SHOT_KINDS
+        and not is_static_kind(obj.kind)
+    ):
+        from fall_of_penghu.world.victory import check_china_victory
+
+        check_china_victory(world)
 
 
 def apply_damage(obj: GameObject, amount: float, world: World | None = None) -> bool:
@@ -38,7 +48,7 @@ def apply_damage(obj: GameObject, amount: float, world: World | None = None) -> 
 
 
 def restock(world: World) -> None:
-    """Slow full recovery of HP and limited ammo after a long idle."""
+    """Slow HP recovery for dynamic units at rest. Ammo and statics stay spent."""
     catalog = world.catalog
     now = world.clock.simulation_time
     dt = world.clock.dt_sim
@@ -46,11 +56,12 @@ def restock(world: World) -> None:
         return
     idle = catalog.rest_idle_sim_s
     heal_span = max(1.0, catalog.heal_full_sim_s)
-    ammo_span = max(1.0, catalog.ammo_full_sim_s)
     for obj in world.entities.items:
         if not obj.active:
             continue
         if getattr(obj, "stowed", False):
+            continue
+        if is_static_kind(obj.kind):
             continue
         if getattr(obj, "moving", False):
             obj.last_moved_sim = now
@@ -63,28 +74,3 @@ def restock(world: World) -> None:
         hp = float(getattr(obj, "hp", 0.0) or 0.0)
         if cap > 1.5 and hp < cap:
             obj.hp = min(cap, hp + cap * dt / heal_span)
-        if not catalog.limited_ammo(obj.kind):
-            continue
-        clip_max = catalog.clip_size(obj.kind)
-        res_max = catalog.reserve_size(obj.kind)
-        stock = clip_max + res_max
-        if stock <= 0:
-            continue
-        clip = int(getattr(obj, "clip", 0) or 0)
-        reserve = int(getattr(obj, "reserve", 0) or 0)
-        if clip >= clip_max and reserve >= res_max:
-            obj.rest_ammo_acc = 0.0
-            continue
-        acc = float(getattr(obj, "rest_ammo_acc", 0.0) or 0.0)
-        acc += stock * dt / ammo_span
-        while acc >= 1.0 and (clip < clip_max or reserve < res_max):
-            acc -= 1.0
-            if clip < clip_max:
-                clip += 1
-            else:
-                reserve += 1
-        obj.clip = clip
-        obj.reserve = reserve
-        obj.rest_ammo_acc = acc
-        if clip > 0:
-            obj.reloading = False

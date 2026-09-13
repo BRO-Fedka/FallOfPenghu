@@ -98,8 +98,8 @@
   },
   "health": {
     "rest_idle_sim_s": 90.0,
-    "heal_full_sim_s": 1800.0,
-    "ammo_full_sim_s": 1800.0,
+    "heal_full_sim_s": 57600.0,
+    "ammo_full_sim_s": 0.0,
     "default": 100.0,
     "kinds": {
       "drone": 100.0,
@@ -374,7 +374,8 @@
     "radar_aa_factor": 0.35,
     "scout_standoff_m": 400.0,
     "scout_reassign_sim_s": 180.0,
-    "scout_count": 10,
+    "scout_count": 6,
+    "scout_per_day": 4,
     "scout_patrol_count": 2,
     "scout_dusk_tod": 0.7083,
     "drone_lost_sim_s": 90.0,

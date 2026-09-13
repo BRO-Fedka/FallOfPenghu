@@ -445,6 +445,10 @@
     {
       "x": -11296.645854679156,
       "y": -28759.10866584527
+    },
+    {
+      "x": 8812.356267094332,
+      "y": 29531.247128804134
     }
   ],
   "sites": [
@@ -568,13 +572,6 @@
       "y": 26770.621987554397
     },
     {
-      "id": "port_023",
-      "kind": "port",
-      "name": "Port 23",
-      "x": 8812.356267094332,
-      "y": 29531.247128804134
-    },
-    {
       "id": "airfield_RCCM",
       "kind": "airfield",
       "name": "Qimei Airfield",
@@ -631,13 +628,6 @@
       "y": 4224.25340754694
     },
     {
-      "id": "dbg_port_002",
-      "kind": "port",
-      "name": "Port",
-      "x": 4389.145999205964,
-      "y": 15757.154426019286
-    },
-    {
       "id": "dbg_port_003",
       "kind": "port",
       "name": "Port",
@@ -668,19 +658,25 @@
       "faction": "P",
       "x": -11232.653437333633,
       "y": -28791.69411532229
+    },
+    {
+      "id": "dbg_port_007",
+      "kind": "port",
+      "name": "Port",
+      "faction": "P",
+      "x": 9024.339871649281,
+      "y": 29120.431978584773
+    },
+    {
+      "id": "dbg_port_002",
+      "kind": "port",
+      "name": "Port",
+      "faction": "P",
+      "x": 4307.634534442025,
+      "y": 15699.416054857076
     }
   ],
   "units": [
-    {
-      "id": "ship_1",
-      "kind": "ship",
-      "name": "Patrol craft",
-      "x": 1338.1532483561896,
-      "y": 7366.851617822424,
-      "heading": 0.0,
-      "speed_mps": 7.5,
-      "mobility": "sea"
-    },
     {
       "id": "aa_1",
       "kind": "aaw",
@@ -780,83 +776,6 @@
       "mobility": "land"
     },
     {
-      "id": "dbg_aaw_005",
-      "kind": "aaw",
-      "name": "AAW",
-      "faction": "P",
-      "x": 3067.014647990969,
-      "y": 20570.915855110517,
-      "heading": 0.0,
-      "speed_mps": 11.0,
-      "mobility": "land"
-    },
-    {
-      "id": "dbg_aa_pickup_001",
-      "kind": "aa_pickup",
-      "name": "AA pickup",
-      "faction": "P",
-      "x": -3554.521243240272,
-      "y": 10383.615812805587,
-      "heading": 0.0,
-      "speed_mps": 13.0,
-      "mobility": "land"
-    },
-    {
-      "id": "dbg_truck_001",
-      "kind": "truck",
-      "name": "Truck",
-      "faction": "P",
-      "x": 13673.80086011893,
-      "y": 7691.559506380106,
-      "heading": 0.0,
-      "speed_mps": 12.0,
-      "mobility": "land"
-    },
-    {
-      "id": "dbg_ferry_001",
-      "kind": "ferry",
-      "name": "Ferry",
-      "faction": "P",
-      "x": 12773.121965649443,
-      "y": 8005.231973647898,
-      "heading": 0.0,
-      "speed_mps": 8.0,
-      "mobility": "sea"
-    },
-    {
-      "id": "dbg_infantry_001",
-      "kind": "infantry",
-      "name": "Infantry",
-      "faction": "P",
-      "x": -4658.009950013422,
-      "y": 10094.630664367458,
-      "heading": 0.0,
-      "speed_mps": 4.0,
-      "mobility": "land"
-    },
-    {
-      "id": "dbg_infantry_002",
-      "kind": "infantry",
-      "name": "Infantry",
-      "faction": "P",
-      "x": -5124.9934850782265,
-      "y": 10030.951091404075,
-      "heading": 0.0,
-      "speed_mps": 4.0,
-      "mobility": "land"
-    },
-    {
-      "id": "dbg_infantry_003",
-      "kind": "infantry",
-      "name": "Infantry",
-      "faction": "P",
-      "x": -4106.275068406344,
-      "y": 10551.849109126462,
-      "heading": 0.0,
-      "speed_mps": 4.0,
-      "mobility": "land"
-    },
-    {
       "id": "dbg_scout_001",
       "kind": "scout",
       "name": "Scout",
@@ -866,138 +785,6 @@
       "heading": 0.0,
       "speed_mps": 18.0,
       "mobility": "air"
-    },
-    {
-      "id": "dbg_scout_002",
-      "kind": "scout",
-      "name": "Scout",
-      "faction": "P",
-      "x": 3344.586818394692,
-      "y": 15733.782997274937,
-      "heading": 0.0,
-      "speed_mps": 18.0,
-      "mobility": "air"
-    },
-    {
-      "id": "dbg_infantry_004",
-      "kind": "infantry",
-      "name": "Infantry",
-      "faction": "C",
-      "x": -2574.749652018391,
-      "y": 11035.747409930755,
-      "heading": 0.0,
-      "speed_mps": 4.0,
-      "mobility": "land"
-    },
-    {
-      "id": "dbg_infantry_005",
-      "kind": "infantry",
-      "name": "Infantry",
-      "faction": "C",
-      "x": -2141.819207172092,
-      "y": 10511.191474111694,
-      "heading": 0.0,
-      "speed_mps": 4.0,
-      "mobility": "land"
-    },
-    {
-      "id": "dbg_infantry_006",
-      "kind": "infantry",
-      "name": "Infantry",
-      "faction": "C",
-      "x": -1731.7951350689837,
-      "y": 11180.057558212855,
-      "heading": 0.0,
-      "speed_mps": 4.0,
-      "mobility": "land"
-    },
-    {
-      "id": "dbg_infantry_007",
-      "kind": "infantry",
-      "name": "Infantry",
-      "faction": "C",
-      "x": -1873.8146460767641,
-      "y": 11154.860548195345,
-      "heading": 0.0,
-      "speed_mps": 4.0,
-      "mobility": "land"
-    },
-    {
-      "id": "dbg_infantry_008",
-      "kind": "infantry",
-      "name": "Infantry",
-      "faction": "C",
-      "x": -1806.65867855332,
-      "y": 10966.080029837829,
-      "heading": 0.0,
-      "speed_mps": 4.0,
-      "mobility": "land"
-    },
-    {
-      "id": "dbg_infantry_009",
-      "kind": "infantry",
-      "name": "Infantry",
-      "faction": "C",
-      "x": -1757.292084426761,
-      "y": 10864.055735309608,
-      "heading": 0.0,
-      "speed_mps": 4.0,
-      "mobility": "land"
-    },
-    {
-      "id": "dbg_tank_001",
-      "kind": "tank",
-      "name": "Tank",
-      "faction": "P",
-      "x": -3092.9935028818836,
-      "y": 10387.853372463964,
-      "heading": 0.0,
-      "speed_mps": 10.0,
-      "mobility": "land"
-    },
-    {
-      "id": "dbg_tank_002",
-      "kind": "tank",
-      "name": "Tank",
-      "faction": "P",
-      "x": -3103.524525577728,
-      "y": 10398.384395159808,
-      "heading": 0.0,
-      "speed_mps": 10.0,
-      "mobility": "land"
-    },
-    {
-      "id": "dbg_artillery_001",
-      "kind": "artillery",
-      "name": "Artillery",
-      "faction": "P",
-      "x": -5744.382934694161,
-      "y": 9674.12985568167,
-      "heading": 0.0,
-      "speed_mps": 1.0,
-      "mobility": "land"
-    },
-    {
-      "id": "dbg_artillery_002",
-      "kind": "artillery",
-      "name": "Artillery",
-      "faction": "P",
-      "x": -20744.904873650128,
-      "y": -7670.394243029143,
-      "heading": 0.0,
-      "speed_mps": 1.0,
-      "mobility": "land"
-    },
-    {
-      "id": "dbg_drone_carrier_001",
-      "kind": "drone_carrier",
-      "name": "Drone carrier",
-      "faction": "P",
-      "x": 12192.496852664886,
-      "y": 16286.496469048814,
-      "heading": 0.0,
-      "speed_mps": 8.0,
-      "mobility": "sea"
     },
     {
       "id": "dbg_artillery_003",
@@ -1031,6 +818,589 @@
       "heading": 0.0,
       "speed_mps": 18.0,
       "mobility": "air"
+    },
+    {
+      "id": "dbg_infantry_004",
+      "kind": "infantry",
+      "name": "Infantry",
+      "faction": "P",
+      "x": -20879.91879185889,
+      "y": -7882.294339630976,
+      "heading": 0.0,
+      "speed_mps": 4.0,
+      "mobility": "land"
+    },
+    {
+      "id": "dbg_infantry_005",
+      "kind": "infantry",
+      "name": "Infantry",
+      "faction": "P",
+      "x": 15005.603191675036,
+      "y": -24025.70466525613,
+      "heading": 0.0,
+      "speed_mps": 4.0,
+      "mobility": "land"
+    },
+    {
+      "id": "dbg_infantry_006",
+      "kind": "infantry",
+      "name": "Infantry",
+      "faction": "P",
+      "x": -10343.866918670406,
+      "y": -30298.86922621122,
+      "heading": 0.0,
+      "speed_mps": 4.0,
+      "mobility": "land"
+    },
+    {
+      "id": "dbg_infantry_007",
+      "kind": "infantry",
+      "name": "Infantry",
+      "faction": "P",
+      "x": -8324.97495662768,
+      "y": -28479.119668587675,
+      "heading": 0.0,
+      "speed_mps": 4.0,
+      "mobility": "land"
+    },
+    {
+      "id": "dbg_tank_003",
+      "kind": "tank",
+      "name": "Tank",
+      "faction": "P",
+      "x": -9348.154896574504,
+      "y": -29921.185355761052,
+      "heading": 0.0,
+      "speed_mps": 10.0,
+      "mobility": "land"
+    },
+    {
+      "id": "dbg_artillery_002",
+      "kind": "artillery",
+      "name": "Artillery",
+      "faction": "P",
+      "x": -9760.173664338326,
+      "y": -28946.07427205334,
+      "heading": 0.0,
+      "speed_mps": 1.0,
+      "mobility": "land"
+    },
+    {
+      "id": "dbg_aa_pickup_002",
+      "kind": "aa_pickup",
+      "name": "AA pickup",
+      "faction": "P",
+      "x": -9207.053058036687,
+      "y": -29217.111542564973,
+      "heading": 0.0,
+      "speed_mps": 25.0,
+      "mobility": "land"
+    },
+    {
+      "id": "dbg_aa_pickup_003",
+      "kind": "aa_pickup",
+      "name": "AA pickup",
+      "faction": "P",
+      "x": -9765.369929179653,
+      "y": -29919.983089666304,
+      "heading": 0.0,
+      "speed_mps": 25.0,
+      "mobility": "land"
+    },
+    {
+      "id": "dbg_aa_pickup_004",
+      "kind": "aa_pickup",
+      "name": "AA pickup",
+      "faction": "P",
+      "x": -2057.0671476751427,
+      "y": -11089.652303200553,
+      "heading": 0.0,
+      "speed_mps": 25.0,
+      "mobility": "land"
+    },
+    {
+      "id": "dbg_aa_pickup_005",
+      "kind": "aa_pickup",
+      "name": "AA pickup",
+      "faction": "P",
+      "x": -2532.842416279196,
+      "y": -11528.82947421968,
+      "heading": 0.0,
+      "speed_mps": 25.0,
+      "mobility": "land"
+    },
+    {
+      "id": "dbg_aa_pickup_006",
+      "kind": "aa_pickup",
+      "name": "AA pickup",
+      "faction": "P",
+      "x": 796.364527363015,
+      "y": -11763.418761455408,
+      "heading": 0.0,
+      "speed_mps": 25.0,
+      "mobility": "land"
+    },
+    {
+      "id": "dbg_tank_004",
+      "kind": "tank",
+      "name": "Tank",
+      "faction": "P",
+      "x": -2090.2748590823344,
+      "y": -12222.31740389833,
+      "heading": 0.0,
+      "speed_mps": 10.0,
+      "mobility": "land"
+    },
+    {
+      "id": "dbg_infantry_008",
+      "kind": "infantry",
+      "name": "Infantry",
+      "faction": "P",
+      "x": -2405.969011318115,
+      "y": -12731.73296773334,
+      "heading": 0.0,
+      "speed_mps": 4.0,
+      "mobility": "land"
+    },
+    {
+      "id": "dbg_infantry_009",
+      "kind": "infantry",
+      "name": "Infantry",
+      "faction": "P",
+      "x": -2850.8107712867145,
+      "y": -12710.208366444536,
+      "heading": 0.0,
+      "speed_mps": 4.0,
+      "mobility": "land"
+    },
+    {
+      "id": "dbg_infantry_010",
+      "kind": "infantry",
+      "name": "Infantry",
+      "faction": "P",
+      "x": 35.311094819723166,
+      "y": -12191.130352991202,
+      "heading": 0.0,
+      "speed_mps": 4.0,
+      "mobility": "land"
+    },
+    {
+      "id": "dbg_infantry_011",
+      "kind": "infantry",
+      "name": "Infantry",
+      "faction": "P",
+      "x": -220.75652082698173,
+      "y": 1603.1756020077028,
+      "heading": 0.0,
+      "speed_mps": 4.0,
+      "mobility": "land"
+    },
+    {
+      "id": "dbg_aaw_006",
+      "kind": "aaw",
+      "name": "AAW",
+      "faction": "P",
+      "x": 13262.215773295697,
+      "y": 11887.45284848883,
+      "heading": 0.0,
+      "speed_mps": 16.0,
+      "mobility": "land"
+    },
+    {
+      "id": "dbg_aaw_007",
+      "kind": "aaw",
+      "name": "AAW",
+      "faction": "P",
+      "x": 6049.263447757932,
+      "y": 21295.01453059188,
+      "heading": 0.0,
+      "speed_mps": 16.0,
+      "mobility": "land"
+    },
+    {
+      "id": "dbg_aa_pickup_001",
+      "kind": "aa_pickup",
+      "name": "AA pickup",
+      "faction": "P",
+      "x": 14935.827031568328,
+      "y": -24525.54721471364,
+      "heading": 0.0,
+      "speed_mps": 25.0,
+      "mobility": "land"
+    },
+    {
+      "id": "dbg_aa_pickup_007",
+      "kind": "aa_pickup",
+      "name": "AA pickup",
+      "faction": "P",
+      "x": -20959.94741871978,
+      "y": -8126.068856652093,
+      "heading": 0.0,
+      "speed_mps": 25.0,
+      "mobility": "land"
+    },
+    {
+      "id": "dbg_aa_pickup_008",
+      "kind": "aa_pickup",
+      "name": "AA pickup",
+      "faction": "P",
+      "x": 8596.423741156746,
+      "y": 30179.698651459745,
+      "heading": 0.0,
+      "speed_mps": 25.0,
+      "mobility": "land"
+    },
+    {
+      "id": "dbg_aa_pickup_009",
+      "kind": "aa_pickup",
+      "name": "AA pickup",
+      "faction": "P",
+      "x": -701.2055243837091,
+      "y": 19023.90209721971,
+      "heading": 0.0,
+      "speed_mps": 25.0,
+      "mobility": "land"
+    },
+    {
+      "id": "dbg_aa_pickup_010",
+      "kind": "aa_pickup",
+      "name": "AA pickup",
+      "faction": "P",
+      "x": -3039.0781678429785,
+      "y": 13352.045931853097,
+      "heading": 0.0,
+      "speed_mps": 25.0,
+      "mobility": "land"
+    },
+    {
+      "id": "dbg_aa_pickup_011",
+      "kind": "aa_pickup",
+      "name": "AA pickup",
+      "faction": "P",
+      "x": -5439.843311756478,
+      "y": 9464.832101564256,
+      "heading": 0.0,
+      "speed_mps": 25.0,
+      "mobility": "land"
+    },
+    {
+      "id": "dbg_aa_pickup_012",
+      "kind": "aa_pickup",
+      "name": "AA pickup",
+      "faction": "P",
+      "x": 5668.042626146425,
+      "y": 4188.931478655674,
+      "heading": 0.0,
+      "speed_mps": 25.0,
+      "mobility": "land"
+    },
+    {
+      "id": "dbg_aa_pickup_013",
+      "kind": "aa_pickup",
+      "name": "AA pickup",
+      "faction": "P",
+      "x": 13405.387305831076,
+      "y": 9931.111806975101,
+      "heading": 0.0,
+      "speed_mps": 25.0,
+      "mobility": "land"
+    },
+    {
+      "id": "dbg_aa_pickup_014",
+      "kind": "aa_pickup",
+      "name": "AA pickup",
+      "faction": "P",
+      "x": 8393.145154840391,
+      "y": 15454.310682095907,
+      "heading": 0.0,
+      "speed_mps": 25.0,
+      "mobility": "land"
+    },
+    {
+      "id": "dbg_aa_pickup_015",
+      "kind": "aa_pickup",
+      "name": "AA pickup",
+      "faction": "P",
+      "x": 6146.557653506379,
+      "y": 21926.729573825283,
+      "heading": 0.0,
+      "speed_mps": 25.0,
+      "mobility": "land"
+    },
+    {
+      "id": "dbg_artillery_001",
+      "kind": "artillery",
+      "name": "Artillery",
+      "faction": "P",
+      "x": 4217.185278560841,
+      "y": 15949.51052385361,
+      "heading": 0.0,
+      "speed_mps": 1.0,
+      "mobility": "land"
+    },
+    {
+      "id": "dbg_artillery_005",
+      "kind": "artillery",
+      "name": "Artillery",
+      "faction": "P",
+      "x": 4498.131558615319,
+      "y": 15990.481856361555,
+      "heading": 0.0,
+      "speed_mps": 1.0,
+      "mobility": "land"
+    },
+    {
+      "id": "dbg_artillery_006",
+      "kind": "artillery",
+      "name": "Artillery",
+      "faction": "P",
+      "x": -1555.6327345100958,
+      "y": 11868.742692125896,
+      "heading": 0.0,
+      "speed_mps": 1.0,
+      "mobility": "land"
+    },
+    {
+      "id": "dbg_artillery_007",
+      "kind": "artillery",
+      "name": "Artillery",
+      "faction": "P",
+      "x": 8009.330110036841,
+      "y": 15273.238198700401,
+      "heading": 0.0,
+      "speed_mps": 1.0,
+      "mobility": "land"
+    },
+    {
+      "id": "dbg_artillery_008",
+      "kind": "artillery",
+      "name": "Artillery",
+      "faction": "P",
+      "x": 5210.462958814253,
+      "y": 9464.47521645003,
+      "heading": 0.0,
+      "speed_mps": 1.0,
+      "mobility": "land"
+    },
+    {
+      "id": "dbg_artillery_009",
+      "kind": "artillery",
+      "name": "Artillery",
+      "faction": "P",
+      "x": 4152.361061375403,
+      "y": 9787.971337959996,
+      "heading": 0.0,
+      "speed_mps": 1.0,
+      "mobility": "land"
+    },
+    {
+      "id": "dbg_artillery_010",
+      "kind": "artillery",
+      "name": "Artillery",
+      "faction": "P",
+      "x": -1737.331683526221,
+      "y": -12582.745570372377,
+      "heading": 0.0,
+      "speed_mps": 1.0,
+      "mobility": "land"
+    },
+    {
+      "id": "dbg_tank_001",
+      "kind": "tank",
+      "name": "Tank",
+      "faction": "P",
+      "x": 4512.645944431294,
+      "y": 10259.627838030952,
+      "heading": 0.0,
+      "speed_mps": 10.0,
+      "mobility": "land"
+    },
+    {
+      "id": "dbg_tank_002",
+      "kind": "tank",
+      "name": "Tank",
+      "faction": "P",
+      "x": 4951.175851032652,
+      "y": 10142.686529603925,
+      "heading": 0.0,
+      "speed_mps": 10.0,
+      "mobility": "land"
+    },
+    {
+      "id": "dbg_tank_005",
+      "kind": "tank",
+      "name": "Tank",
+      "faction": "P",
+      "x": -1753.8652116601502,
+      "y": 11588.211036549144,
+      "heading": 0.0,
+      "speed_mps": 10.0,
+      "mobility": "land"
+    },
+    {
+      "id": "dbg_tank_006",
+      "kind": "tank",
+      "name": "Tank",
+      "faction": "P",
+      "x": 3611.41417436533,
+      "y": 20528.024408703815,
+      "heading": 0.0,
+      "speed_mps": 10.0,
+      "mobility": "land"
+    },
+    {
+      "id": "dbg_tank_007",
+      "kind": "tank",
+      "name": "Tank",
+      "faction": "P",
+      "x": 11280.293237595695,
+      "y": 9610.922528352905,
+      "heading": 0.0,
+      "speed_mps": 10.0,
+      "mobility": "land"
+    },
+    {
+      "id": "dbg_infantry_001",
+      "kind": "infantry",
+      "name": "Infantry",
+      "faction": "P",
+      "x": 7872.473283311627,
+      "y": 4932.755838975274,
+      "heading": 0.0,
+      "speed_mps": 4.0,
+      "mobility": "land"
+    },
+    {
+      "id": "dbg_infantry_002",
+      "kind": "infantry",
+      "name": "Infantry",
+      "faction": "P",
+      "x": 8942.917419443027,
+      "y": 7470.550363960951,
+      "heading": 0.0,
+      "speed_mps": 4.0,
+      "mobility": "land"
+    },
+    {
+      "id": "dbg_infantry_003",
+      "kind": "infantry",
+      "name": "Infantry",
+      "faction": "P",
+      "x": 11059.750767298377,
+      "y": 9106.285223667359,
+      "heading": 0.0,
+      "speed_mps": 4.0,
+      "mobility": "land"
+    },
+    {
+      "id": "dbg_infantry_012",
+      "kind": "infantry",
+      "name": "Infantry",
+      "faction": "P",
+      "x": 15252.5834863915,
+      "y": 9784.871671457688,
+      "heading": 0.0,
+      "speed_mps": 4.0,
+      "mobility": "land"
+    },
+    {
+      "id": "dbg_infantry_013",
+      "kind": "infantry",
+      "name": "Infantry",
+      "faction": "P",
+      "x": 14931.851160958871,
+      "y": 12433.883100030882,
+      "heading": 0.0,
+      "speed_mps": 4.0,
+      "mobility": "land"
+    },
+    {
+      "id": "dbg_infantry_014",
+      "kind": "infantry",
+      "name": "Infantry",
+      "faction": "P",
+      "x": 9568.163969696134,
+      "y": 13275.75045903683,
+      "heading": 0.0,
+      "speed_mps": 4.0,
+      "mobility": "land"
+    },
+    {
+      "id": "dbg_infantry_015",
+      "kind": "infantry",
+      "name": "Infantry",
+      "faction": "P",
+      "x": 7408.072576607535,
+      "y": 17182.70501195344,
+      "heading": 0.0,
+      "speed_mps": 4.0,
+      "mobility": "land"
+    },
+    {
+      "id": "dbg_infantry_016",
+      "kind": "infantry",
+      "name": "Infantry",
+      "faction": "P",
+      "x": 7030.82889272105,
+      "y": 20972.96438706489,
+      "heading": 0.0,
+      "speed_mps": 4.0,
+      "mobility": "land"
+    },
+    {
+      "id": "dbg_infantry_017",
+      "kind": "infantry",
+      "name": "Infantry",
+      "faction": "P",
+      "x": 3778.216027715528,
+      "y": 21017.520727681404,
+      "heading": 0.0,
+      "speed_mps": 4.0,
+      "mobility": "land"
+    },
+    {
+      "id": "dbg_infantry_018",
+      "kind": "infantry",
+      "name": "Infantry",
+      "faction": "P",
+      "x": -974.4603047126293,
+      "y": 18418.400858384757,
+      "heading": 0.0,
+      "speed_mps": 4.0,
+      "mobility": "land"
+    },
+    {
+      "id": "dbg_infantry_019",
+      "kind": "infantry",
+      "name": "Infantry",
+      "faction": "P",
+      "x": -1375.4673702612563,
+      "y": 15908.393670321135,
+      "heading": 0.0,
+      "speed_mps": 4.0,
+      "mobility": "land"
+    },
+    {
+      "id": "dbg_infantry_020",
+      "kind": "infantry",
+      "name": "Infantry",
+      "faction": "P",
+      "x": -1671.3178047663805,
+      "y": 13543.148749404583,
+      "heading": 0.0,
+      "speed_mps": 4.0,
+      "mobility": "land"
+    },
+    {
+      "id": "dbg_infantry_021",
+      "kind": "infantry",
+      "name": "Infantry",
+      "faction": "P",
+      "x": -2216.812098322467,
+      "y": 10623.149883898473,
+      "heading": 0.0,
+      "speed_mps": 4.0,
+      "mobility": "land"
     }
   ],
   "removed_ids": [
@@ -1043,7 +1413,6 @@
     "port_020",
     "port_010",
     "port_002",
-    "dbg_aaw_006",
     "drone_1",
     "dbg_drone_001",
     "dbg_drone_009",
@@ -1059,6 +1428,14 @@
     "dbg_ship_001",
     "dbg_ship_004",
     "dbg_ship_009",
-    "ferry_001"
+    "ferry_001",
+    "dbg_drone_carrier_001",
+    "ship_1",
+    "port_023",
+    "dbg_truck_001",
+    "dbg_ferry_001",
+    "dbg_scout_002",
+    "dbg_aaw_005",
+    "dbg_artillery_004"
   ]
 }

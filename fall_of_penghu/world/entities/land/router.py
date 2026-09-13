@@ -41,6 +41,10 @@ class LandRouter:
     def islands(self) -> IslandIndex:
         return self._islands
 
+    @property
+    def crossings(self) -> list[Crossing]:
+        return self._book.items
+
     def bind_bridges(self, sites: list[GameObject]) -> None:
         self._book.bind_sites(sites)
 
@@ -437,7 +441,67 @@ class LandRouter:
         rast = self._raster(island)
         if rast is None:
             return None
-        return rast.path(a, b)
+        return self._dry(island, rast, rast.path(a, b))
+
+    def _dry(
+        self,
+        island: int,
+        rast: IslandRaster,
+        pts: list[tuple[float, float]] | None,
+    ) -> list[tuple[float, float]] | None:
+        """Bend segments that clip water back ashore.
+
+        Cell centres are dry by construction, but a coast cell is half water, so
+        the line between two of them can cross an inlet narrower than a cell.
+        """
+        if pts is None or len(pts) < 2:
+            return pts
+        out = [pts[0]]
+        for b in pts[1:]:
+            a = out[-1]
+            if self._near_coast(rast, a, b) and self._crosses_water(island, a, b):
+                bend = self._dry_bend(island, a, b)
+                if bend is not None:
+                    out.append(bend)
+            out.append(b)
+        return out
+
+    @staticmethod
+    def _near_coast(
+        rast: IslandRaster,
+        a: tuple[float, float],
+        b: tuple[float, float],
+    ) -> bool:
+        """Cheap filter: only near a shore is the fine water check worth it."""
+        for pt in (a, b):
+            i = rast.index(*pt)
+            if i is None or rast.code(i) != 0:
+                return True
+        return False
+
+    def _dry_bend(
+        self,
+        island: int,
+        a: tuple[float, float],
+        b: tuple[float, float],
+    ) -> tuple[float, float] | None:
+        dx = b[0] - a[0]
+        dy = b[1] - a[1]
+        length = hypot(dx, dy) or 1.0
+        nx, ny = -dy / length, dx / length
+        mx, my = (a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0
+        for frac in (0.3, 0.6, 1.0, 1.6):
+            off = length * frac
+            for sign in (1.0, -1.0):
+                pt = (mx + nx * off * sign, my + ny * off * sign)
+                if self._islands.at(*pt) != island:
+                    continue
+                if self._crosses_water(island, a, pt):
+                    continue
+                if self._crosses_water(island, pt, b):
+                    continue
+                return pt
+        return None
 
     def _raster(self, island: int) -> IslandRaster | None:
         if island in self._skip_raster:
