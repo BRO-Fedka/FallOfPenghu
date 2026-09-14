@@ -95,5 +95,8 @@ class Intercept(DynamicObject):
             self.trail.append(pos)
 
     def _hit(self, target: GameObject) -> None:
+        from fall_of_penghu.shell.audio import play
+
+        play("explosion")
         apply_damage(target, self.damage)
         self.active = False

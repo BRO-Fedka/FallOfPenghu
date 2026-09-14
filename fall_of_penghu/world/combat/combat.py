@@ -18,6 +18,12 @@ if TYPE_CHECKING:
     from fall_of_penghu.world.world import World
 
 
+def _boom() -> None:
+    from fall_of_penghu.shell.audio import play
+
+    play("explosion")
+
+
 class Combat:
     """Guns fire on snapshot-visible targets inside engagement range."""
 
@@ -42,6 +48,7 @@ class Combat:
             for shot in tracers:
                 if shot.fly(now, dt):
                     if shot.blast_m > 0.0:
+                        _boom()
                         shooter = world.entities.get(shot.shooter_id)
                         _splash(
                             world,
@@ -66,7 +73,7 @@ class Combat:
             for faction in factions:
                 self._engage(world, faction, now, missiles, tracers)
         for obj in list(world.entities.items):
-            if obj.kind in SHOT_KINDS and not obj.active:
+            if isinstance(obj, DynamicObject) and not obj.active:
                 world.entities.discard(obj.id)
 
     def _kamikaze(self, world: World) -> None:
@@ -146,7 +153,7 @@ class Combat:
             if target is None:
                 continue
             self._spawn(world, battery, target, now, catalog)
-            _spend_shot(battery, catalog, now, world)
+            _spend_shot(battery, catalog, now, world, target)
             if reserve:
                 claimed.add(target.id)
             in_flight[battery.id] = in_flight.get(battery.id, 0) + 1
@@ -316,6 +323,7 @@ class Combat:
         scatter = catalog.scatter_m(battery.kind, dist)
         aim_x, aim_y = _scatter_point(self._rng, mark_x, mark_y, scatter)
         self._seq += 1
+        _boom()
         world.entities.add(
             Tracer(
                 id=f"sh_{self._seq}",
@@ -356,7 +364,7 @@ def _weapon_ready(
     if getattr(battery, "reloading", False):
         return False
     if catalog.limited_ammo(battery.kind) and int(getattr(battery, "clip", 0) or 0) <= 0:
-        return False
+        return catalog.ammo_mobility(battery.kind) is not None
     return True
 
 
@@ -394,8 +402,9 @@ def _spend_shot(
     catalog: DetectionCatalog,
     now: float,
     world: World | None = None,
+    target: GameObject | None = None,
 ) -> None:
-    if catalog.limited_ammo(battery.kind):
+    if catalog.shot_uses_ammo(battery.kind, target):
         battery.clip = max(0, int(getattr(battery, "clip", 0) or 0) - 1)
         if world is not None:
             _ammo_notice(battery, world)
@@ -411,12 +420,14 @@ def _ammo_notice(battery: DynamicObject, world: World) -> None:
         return
     clip = int(getattr(battery, "clip", 0) or 0)
     reserve = int(getattr(battery, "reserve", 0) or 0)
+    from fall_of_penghu.shell.i18n import t
+
     if clip <= 0 and reserve <= 0:
         state = "empty"
-        text = f"{kind_label(battery.kind)} empty"
+        text = t("notice.ammo.empty", kind=kind_label(battery.kind))
     elif reserve <= 0 and clip > 0:
         state = "last"
-        text = f"{kind_label(battery.kind)} last clip"
+        text = t("notice.ammo.last", kind=kind_label(battery.kind))
     else:
         if reserve > 0:
             battery.ammo_note = None
@@ -448,6 +459,8 @@ def _eligible(
     if foe.kind == "bridge":
         return False
     if not catalog.can_engage(battery.kind, foe):
+        return False
+    if catalog.ammo_blocks_shot(battery, foe):
         return False
     if not catalog.wants_target(battery, foe):
         return False

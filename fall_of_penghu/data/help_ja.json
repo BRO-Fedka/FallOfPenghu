@@ -1,0 +1,131 @@
+{
+  "format": "fall-of-penghu-help",
+  "version": 2,
+  "tabs": [
+    {
+      "id": "overview",
+      "title": "概要",
+      "lead": "あなたは澎湖を守る。援軍は来ない。 /n中国は海と空から攻める。 /nできるだけ長く持ちこたえることが仕事だ。 /n島に自軍の地上部隊が残らなくなったとき、中国の勝ち。 /n航空機と艦船は島を保持できない。保持できるのは地上だけ: /infantry /tank /artillery /aa_pickup /aaw /truck。 /n人が住む島を無抵抗で渡すな。見張りがそこにいる。 /n中国は揚陸艦 /landing_ship_c、歩兵 /infantry_c、偵察機 /scout_c、カミカゼ /drone_c を送る。 /n森は隠す。開けた場所は遠くから見える。 /nこの先はカメラ、命令、射撃、視界、通信、フェリー。",
+      "shots": [],
+      "notes": [
+        "ポーズは /esc または右の /pause。ポーズではゲームは終了しない。",
+        "このマニュアルは /f1 または /help で開く。"
+      ]
+    },
+    {
+      "id": "camera",
+      "title": "カメラ",
+      "lead": "カメラ移動は /W /A /S /D か矢印。空き地で /lmb を押しながらドラッグしてもよい。 /nズームは /Q /E または /wheel。 /nポーズは /esc または /pause。 /nレーダー切替は /R。 /n澎湖へ戻すのは /home または /C。",
+      "shots": [
+        {
+          "file": "help_camera_speed.png",
+          "caption": "速度: /f2 /f3 /f4 /f5 またはバーのボタン。0× は時間停止。"
+        },
+        {
+          "file": "help_camera_radar.png",
+          "caption": "/R または VIEW MODE: /map 地図と /radar レーダー。"
+        }
+      ],
+      "notes": [
+        "/esc はポーズ。ゲームは終了しない。"
+      ]
+    },
+    {
+      "id": "units",
+      "title": "部隊",
+      "lead": "選択と解除は /lmb。追加は /shift + /lmb。 /n集団は /shift + /lmb を押したまま枠を引く。 /n移動は /rmb。 /n経由点は /shift + /rmb。海 /ferry と空 /drone だけ。 /n地上部隊は水上を歩けない。新しい /rmb は新しい経路。",
+      "shots": [
+        {
+          "file": "help_units_panel.png",
+          "caption": "UNITS 窓。チェックを外すとその種類が地図から消える。部隊自体は残る。"
+        }
+      ],
+      "notes": [
+        "UNITS はタイトルをつかんで動かせる。",
+        "Air, Land, Sea, Static は左の矢印で開く。"
+      ]
+    },
+    {
+      "id": "warfare",
+      "title": "戦闘",
+      "lead": "RANGE は /infantry /aa_pickup /tank /aaw /artillery の射程を描く。 /n/G は RANGE の輪を全部隠すか戻す。 /nTARGETS は射手を選ぶと出る。 /n FIRE — フィルタに従い自動射撃。 /n HOLD — FIRE に戻すまで沈黙。 /nTARGETS のチェックは撃てる相手: /drone_c /scout_c /landing_ship_c /infantry_c など。 /n AIM, PICK, CLR は /artillery だけ。 /n AIM — 次の地図 /lmb が着弾点。CLR は消去。 /n PICK — 特定の敵を /lmb。枠でも可。 /n/shift + PICK はそのリストを空にする。 /n/rmb は AIM, PICK、港とフェリーの命令を取り消す。 /n砲兵は停止中だけ撃つ。 /n止まっていて最近被弾していなければ自動回復。満タンまでゲーム内2日。 /n弾薬は補充されない。",
+      "shots": [
+        {
+          "file": "help_warfare_range.png",
+          "caption": "RANGE。/infantry /aa_pickup /tank /aaw /artillery の輪をチェック。"
+        },
+        {
+          "file": "help_warfare_targets.png",
+          "caption": "TARGETS。HOLD と FIRE、Air / Land / Sea / Static のフィルタ。"
+        },
+        {
+          "file": "help_warfare_arty.png",
+          "caption": "/artillery のみ: 地図で AIM、散布円。PICK は優先目標。"
+        }
+      ],
+      "notes": [
+        "移動中や直後の被弾では回復しない。",
+        "/aa_pickup は /infantry に強い。/infantry は /tank に強い。/tank は /aa_pickup に強い。戦車は歩兵を撃たない。"
+      ]
+    },
+    {
+      "id": "intel",
+      "title": "情報",
+      "lead": "見えるのは自軍センサーが見たもの。中国も同じ。 /nVISION は視界の輪。Primitive は肉眼。Advanced は /scout_c のような長距離光学。 /n開けた場所が最も遠い。草地は近い。森はさらに近く、隠れやすい。 /n右上の /sat は中国の衛星。 /n緑 /sat: 衛星が見ている。赤 /sat_red: 沈黙。横にタイマー。 /n見ている間、開け地と草地の車両・艦船が見える。 /n歩兵 /infantry は見えない。 /n森では軌道から誰も見えない。 /n/sat が緑のとき、/drone_c や /scout_c の SPOTTED は森からのみ。 /n地上部隊がいる間、島はあなたのもの。 /n中国の地上部隊だけなら島は向こう。/port と /airfield も移る。 /n空 /drone /scout と海 /ferry /ship は島を保持できない。 /n人が住む島を失うことは見張りも失うこと。",
+      "shots": [
+        {
+          "file": "help_intel_vision.png",
+          "caption": "VISION。開け地は最初からオン。草地と森は自分で。"
+        },
+        {
+          "file": "help_intel_sat.png",
+          "caption": "バー右の /sat。タイマーは窓の残り、または次に開くまで。"
+        },
+        {
+          "file": "help_intel_island.png",
+          "caption": "自軍の地上部隊がなく、中国の地上部隊がいると島の色が変わる。"
+        }
+      ],
+      "notes": []
+    },
+    {
+      "id": "messages",
+      "title": "通信",
+      "lead": "CONTACTS は右下。 /n CONTACT — 敵を初めて見た: /drone_c /scout_c /landing_ship_c /ship_c。 /n SPOTTED — 相手の /drone_c か /scout_c に見られた。 /n LOSSES — 自軍が撃破された。 /n AMMO — 弾倉が残り少ない、または空。 /n SAT — 衛星 /sat が上がった、または /sat_red が落ちた。 /n THEATER — 島の奪取・奪還、または上陸 /landing_ship_c。 /n LIFT — /ferry の積載と揚陸。 /n行をクリックするとカメラが飛ぶ。 /n SET はフィルタ: 表示と速度 1× / 0×。 /n WIN は窓を外す。DOCK は固定に戻す。",
+      "shots": [
+        {
+          "file": "help_messages_contacts.png",
+          "caption": "CONTACTS。SET は設定。WIN と DOCK は窓の固定と解除。"
+        },
+        {
+          "file": "help_messages_set.png",
+          "caption": "SET では種類ごとに表示、速度 OFF / 1× / 0×、アイコンフィルタ。"
+        }
+      ],
+      "notes": []
+    },
+    {
+      "id": "sea",
+      "title": "海",
+      "lead": "/ferry が運ぶのは地上だけ: /infantry /tank /artillery /aa_pickup /aaw /truck。 /n自分の /port を選び Launch、水へ /lmb — 船体が在庫から出る。 /n Recall、自分の /ferry へ /lmb — 空の船体が戻る。港は最大20。 /n/ferry を選び Load、地上部隊へ /lmb で乗船。Unload、岸か自分の /port へ /lmb で揚陸。 /n/bridge を選び Destroy。橋が無いと地上は海峡を歩けない。",
+      "shots": [
+        {
+          "file": "help_sea_port.png",
+          "caption": "/port: 水へ Launch、自分の /ferry へ Recall。在庫は港に表示。"
+        },
+        {
+          "file": "help_sea_ferry.png",
+          "caption": "/ferry: Load — 自部隊をクリック。Unload — 岸か港をクリック。"
+        },
+        {
+          "file": "help_sea_bridge.png",
+          "caption": "/bridge。Destroy は即破壊。地上はもう海峡を歩けない。"
+        }
+      ],
+      "notes": [
+        "同じ港・フェリー命令をもう一度押すと取り消す。",
+        "このモードでは /rmb でも取り消せる。"
+      ]
+    }
+  ]
+}

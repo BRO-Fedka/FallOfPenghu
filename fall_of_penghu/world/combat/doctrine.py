@@ -17,6 +17,12 @@ LABELS = {
 }
 
 
+def doctrine_label(doctrine: str) -> str:
+    from fall_of_penghu.shell.i18n import t
+
+    return t(f"doctrine.{doctrine}", default=LABELS.get(doctrine, doctrine))
+
+
 def accepts(doctrine: str, target: GameObject) -> bool:
     if doctrine == HOLD:
         return False

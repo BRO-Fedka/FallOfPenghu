@@ -1,0 +1,131 @@
+{
+  "format": "fall-of-penghu-help",
+  "version": 2,
+  "tabs": [
+    {
+      "id": "overview",
+      "title": "Resumen",
+      "lead": "Tú defiendes las islas Penghu. No vendrá ayuda. /nChina ataca por mar y por aire. /nTu trabajo es aguantar el mayor tiempo posible. /nChina gana cuando no queda ninguna unidad terrestre tuya en las islas. /nAviones y barcos no sostienen una isla. Solo las unidades de tierra: /infantry /tank /artillery /aa_pickup /aaw /truck. /nNo entregues islas habitadas sin pelear. Allí están tus vigías. /nChina envía desembarco /landing_ship_c, infantería /infantry_c, exploradores /scout_c y drones kamikaze /drone_c. /nEl bosque te oculta. El campo abierto se ve desde lejos. /nEl resto del manual cubre cámara, órdenes, fuego, visión, mensajes y ferris.",
+      "shots": [],
+      "notes": [
+        "Pausa con /esc o el botón /pause a la derecha. La pausa no cierra el juego.",
+        "Este manual se abre con /f1 o el botón /help."
+      ]
+    },
+    {
+      "id": "camera",
+      "title": "Cámara",
+      "lead": "Para mover la cámara usa /W /A /S /D o las flechas. También puedes mantener /lmb en terreno vacío y arrastrar. /nPara el zoom usa /Q /E o /wheel. /nPara abrir la pausa usa /esc o /pause. /nPara el modo radar usa /R. /nPara volver a Penghu pulsa /home o /C.",
+      "shots": [
+        {
+          "file": "help_camera_speed.png",
+          "caption": "Velocidad: /f2 /f3 /f4 /f5 o los botones de la barra. 0× detiene el tiempo."
+        },
+        {
+          "file": "help_camera_radar.png",
+          "caption": "/R o los botones VIEW MODE: /map mapa y /radar radar."
+        }
+      ],
+      "notes": [
+        "/esc abre la pausa. El juego no se cierra."
+      ]
+    },
+    {
+      "id": "units",
+      "title": "Unidades",
+      "lead": "Para seleccionar o deseleccionar usa /lmb. Para añadir otra unidad, /shift + /lmb. /nPara un grupo, mantén /shift + /lmb y arrastra un recuadro. /nPara mover, /rmb. /nPara un punto de ruta, /shift + /rmb. Solo mar /ferry y aire /drone. /nLas unidades de tierra no caminan sobre el agua. Un nuevo /rmb traza un camino nuevo.",
+      "shots": [
+        {
+          "file": "help_units_panel.png",
+          "caption": "Ventana UNITS. Quita la marca para ocultar ese tipo en el mapa. Las unidades siguen en el mundo."
+        }
+      ],
+      "notes": [
+        "Puedes arrastrar UNITS por el título.",
+        "Las ramas Air, Land, Sea y Static se abren con la flecha de la izquierda."
+      ]
+    },
+    {
+      "id": "warfare",
+      "title": "Combate",
+      "lead": "La ventana RANGE dibuja el alcance de /infantry /aa_pickup /tank /aaw /artillery. /n/G oculta todos los anillos RANGE o los devuelve. /nTARGETS aparece al seleccionar un tirador. /n FIRE — la batería dispara sola, según el filtro. /n HOLD — calla hasta que vuelvas a FIRE. /nLas casillas de TARGETS eligen a quién puedes golpear: /drone_c /scout_c /landing_ship_c /infantry_c y el resto. /n AIM, PICK y CLR solo en /artillery. /n AIM — el siguiente /lmb en el mapa marca el impacto. CLR lo borra. /n PICK — /lmb sobre enemigos concretos. El recuadro también vale. /n/shift + PICK vacía esa lista. /n/rmb cancela AIM, PICK o una orden de puerto y ferry. /nLa artillería solo dispara quieta. /nUna unidad se cura sola si está parada y no la han golpeado hace poco. La salud llena tarda dos días de juego. /nLa munición no se rellena.",
+      "shots": [
+        {
+          "file": "help_warfare_range.png",
+          "caption": "RANGE. Marca los anillos de /infantry /aa_pickup /tank /aaw /artillery."
+        },
+        {
+          "file": "help_warfare_targets.png",
+          "caption": "TARGETS. HOLD y FIRE, más filtros Air, Land, Sea y Static."
+        },
+        {
+          "file": "help_warfare_arty.png",
+          "caption": "Solo /artillery: AIM en el mapa, anillo de dispersión. PICK marca blancos prioritarios."
+        }
+      ],
+      "notes": [
+        "La cura no corre mientras la unidad se mueve o acaba de recibir daño.",
+        "/aa_pickup es fuerte contra /infantry. /infantry es fuerte contra /tank. /tank es fuerte contra /aa_pickup. Los tanques no disparan a la infantería."
+      ]
+    },
+    {
+      "id": "intel",
+      "title": "Intel",
+      "lead": "Ves lo que ven tus sensores. China ve lo suyo. /nVISION dibuja anillos de vista. Primitive es el ojo. Advanced es óptica larga, como /scout_c. /nEl campo abierto se ve más lejos. La hierba, menos. El bosque, aún menos y oculta mejor. /nEl icono /sat arriba a la derecha es el satélite chino. /nVerde /sat: el satélite mira. Rojo /sat_red: calla. Al lado hay un temporizador. /nMientras mira, ve vehículos y barcos en campo abierto y hierba. /nNo ve infantería /infantry. /nEn el bosque nadie se ve desde órbita. /nCon /sat verde, un aviso SPOTTED de /drone_c o /scout_c solo llega desde el bosque. /nUna isla es tuya mientras tus unidades de tierra estén en ella. /nSi solo hay tierra china, la isla es suya. /port y /airfield van con ella. /nAire /drone /scout y mar /ferry /ship no sostienen una isla. /nUna isla habitada perdida es también un vigía perdido.",
+      "shots": [
+        {
+          "file": "help_intel_vision.png",
+          "caption": "VISION. El campo abierto va activado. Hierba y bosque, tú."
+        },
+        {
+          "file": "help_intel_sat.png",
+          "caption": "/sat a la derecha de la barra. El temporizador es cuánto queda abierta la ventana, o cuándo vuelve."
+        },
+        {
+          "file": "help_intel_island.png",
+          "caption": "La isla cambia de color cuando no queda tierra tuya y sí hay tierra china."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "id": "messages",
+      "title": "Mensajes",
+      "lead": "El diario CONTACTS está abajo a la derecha. /n CONTACT — viste un enemigo por primera vez: /drone_c /scout_c /landing_ship_c /ship_c. /n SPOTTED — su /drone_c o /scout_c te ve. /n LOSSES — perdiste uno tuyo. /n AMMO — casi no quedan cargadores, o ya no. /n SAT — el satélite /sat subió o /sat_red bajó. /n THEATER — una isla se tomó o se recuperó, o hay un desembarco /landing_ship_c. /n LIFT — carga o descarga de /ferry. /nClic en una línea para llevar la cámara. /n SET abre filtros: qué mostrar y si bajar a 1× o 0×. /n WIN desancla la ventana. DOCK la vuelve a fijar.",
+      "shots": [
+        {
+          "file": "help_messages_contacts.png",
+          "caption": "CONTACTS. SET son ajustes. WIN y DOCK sueltan o fijan la ventana."
+        },
+        {
+          "file": "help_messages_set.png",
+          "caption": "En SET, cada tipo tiene visibilidad, velocidad OFF / 1× / 0× y filtros de icono."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "id": "sea",
+      "title": "Mar",
+      "lead": "Un /ferry solo lleva tierra: /infantry /tank /artillery /aa_pickup /aaw /truck. /nElige tu /port y Launch, luego /lmb en el agua — un casco sale del stock. /n Recall, luego /lmb en tu /ferry — un casco vacío vuelve al stock. Un puerto guarda hasta 20. /nElige un /ferry: Load y /lmb en tu unidad de tierra para embarcar. Unload y /lmb en orilla o tu /port para desembarcar. /nUn /bridge: selecciónalo y Destroy. Sin puente, la tierra no cruza el estrecho a pie.",
+      "shots": [
+        {
+          "file": "help_sea_port.png",
+          "caption": "/port: Launch en el agua, Recall en tu /ferry. El stock se ve en el puerto."
+        },
+        {
+          "file": "help_sea_ferry.png",
+          "caption": "/ferry: Load — clic en tu unidad. Unload — clic en la orilla o un puerto."
+        },
+        {
+          "file": "help_sea_bridge.png",
+          "caption": "/bridge. Destroy lo rompe al instante. La tierra ya no cruza a pie."
+        }
+      ],
+      "notes": [
+        "Volver a pulsar la misma orden de puerto o ferry la cancela.",
+        "/rmb también cancela la orden en este modo."
+      ]
+    }
+  ]
+}

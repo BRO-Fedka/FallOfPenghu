@@ -16,17 +16,19 @@ from fall_of_penghu.range_palette import RangePalette
 from fall_of_penghu.render.display import GameDisplay
 from fall_of_penghu.render.dynamic import DynamicRenderer
 from fall_of_penghu.selection import Selection
+from fall_of_penghu.shell.audio import click, play
 from fall_of_penghu.shell.settings import Settings, notice_speed, notice_visible
 from fall_of_penghu.shell.snapshot import apply_camera, apply_chat, apply_china, apply_world
 from fall_of_penghu.shell.theme import ink_at
-from fall_of_penghu.ui import DEBUG_H, FPS_H, Hud
+from fall_of_penghu.ui import Hud, footer_inset
 from fall_of_penghu.vision_palette import VisionPalette
 from fall_of_penghu.world import FACTION_PLAYER, World
 from fall_of_penghu.world.combat.health import wreck
 from fall_of_penghu.world.entities.dynamic import DynamicObject
+from fall_of_penghu.paths import resource_root
 from fall_of_penghu.world.entities.kinds import SHOT_KINDS, is_static_kind
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = resource_root()
 MAP_DIR = ROOT / "penghu_map_v1"
 
 
@@ -146,16 +148,20 @@ class Match:
         camera = self.camera
         world = self.world
         if camera.debug_mode and self.palette.handle_event(event, screen_w, screen_h):
+            click(event)
             if self.palette.kill_ground:
                 self.palette.kill_ground = False
                 n = _wreck_player_ground(world)
                 print(f"debug: wrecked {n} player ground unit(s)", flush=True)
             return None
         if self.vision.handle_event(event, screen_w, screen_h):
+            click(event)
             return None
         if self.ranges.handle_event(event, screen_w, screen_h):
+            click(event)
             return None
         if self.units.handle_event(event, screen_w, screen_h):
+            click(event)
             return None
         if event.type == pygame.KEYDOWN and event.key == pygame.K_g:
             self.ranges.toggle()
@@ -168,14 +174,17 @@ class Match:
             screen_w,
             screen_h,
         ):
+            click(event)
             return None
-        inset = DEBUG_H if camera.debug_mode else FPS_H
+        inset = footer_inset(camera.debug_mode)
         chat_act = self.chat.handle_event(
             event, self.cfg, screen_w, screen_h, inset
         )
         if chat_act == "chat_settings":
+            click(event)
             return "chat_settings"
         if chat_act == "chat_prefs":
+            click(event)
             return "chat_prefs"
         if isinstance(chat_act, ChatMessage):
             camera.fly_to(chat_act.x, chat_act.y)
@@ -197,10 +206,13 @@ class Match:
             clock_12h=self.cfg.clock_12h,
         )
         if hud == "pause":
+            click(event)
             return "pause"
         if hud == "help":
+            click(event)
             return "help"
         if hud:
+            click(event)
             return None
         if event.type == pygame.MOUSEWHEEL and self._chrome(screen_w, screen_h, *mouse):
             return None
@@ -210,7 +222,11 @@ class Match:
             and self._chrome(screen_w, screen_h, *mouse)
         ):
             return None
-        if event.type == pygame.KEYDOWN and event.key == pygame.K_F12:
+        if (
+            event.type == pygame.KEYDOWN
+            and event.key == pygame.K_F12
+            and bool(event.mod & pygame.KMOD_CTRL)
+        ):
             camera.debug_mode = not camera.debug_mode
             if camera.debug_mode:
                 self.palette.refresh(world.catalog)
@@ -271,6 +287,9 @@ class Match:
             with scope("china"):
                 self.china.step(world)
             with scope("perception"):
+                world.perception.spotted_open_without_sat = bool(
+                    self.cfg.chat_spotted_no_sat
+                )
                 world.perception.step(world)
             with scope("combat"):
                 world.combat.step(world)
@@ -282,6 +301,7 @@ class Match:
                     world.clock.set_speed(speed)
                 if notice_visible(self.cfg, notice):
                     self.chat.push(notice, world.clock.wall_time)
+                    play("notification")
         with scope("camera"):
             self.camera.step_fly_to(dt_wall, screen_w, screen_h)
 
@@ -345,7 +365,7 @@ class Match:
                 defeated=world.defeat is not None and self.observing,
                 clock_12h=self.cfg.clock_12h,
             )
-            inset = DEBUG_H if camera.debug_mode else FPS_H
+            inset = footer_inset(camera.debug_mode)
             self.chat.draw(
                 renderer,
                 self.cfg,

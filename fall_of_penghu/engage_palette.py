@@ -3,6 +3,8 @@ from __future__ import annotations
 import pygame
 
 from fall_of_penghu.render.dynamic.icons import IconStore
+from fall_of_penghu.shell.i18n import t
+from fall_of_penghu.shell.theme import ui_font
 from fall_of_penghu.world.combat.doctrine import FIRE, HOLD, is_battery, is_shooter
 from fall_of_penghu.world.entities import (
     Entities,
@@ -37,7 +39,7 @@ class EngagePalette:
         self.y = PANEL_H + 12
         self._open: dict[str, bool] = {name: False for name in BRANCHES}
         self._icons = IconStore()
-        self._font = pygame.font.SysFont("consolas", 13)
+        self._font = ui_font(13)
         self._panel = pygame.Rect(0, 0, 1, 1)
         self._title = pygame.Rect(0, 0, 1, 1)
         self._rows: list[tuple[pygame.Rect, str, str | None]] = []
@@ -143,7 +145,7 @@ class EngagePalette:
         surf = pygame.Surface((self._panel.w, self._panel.h), pygame.SRCALPHA)
         surf.fill((8, 10, 12, 200))
         pygame.draw.rect(surf, (*ink, 80), surf.get_rect(), 1)
-        title = self._font.render("TARGETS", True, ink)
+        title = self._font.render(t("panel.targets"), True, ink)
         surf.blit(title, (PAD, (TITLE_H - title.get_height()) // 2))
         for i, line in enumerate(ammo):
             text = self._font.render(line, True, ink)
@@ -160,13 +162,15 @@ class EngagePalette:
             elif action == "branch" and key is not None:
                 state = self._branch_state(shooters, catalog, key)
                 self._draw_check(surf, local, ink, state)
-                label = self._font.render(BRANCH_LABEL[key], True, ink)
+                label = self._font.render(
+                    t(f"branch.{key}", default=BRANCH_LABEL[key]), True, ink
+                )
                 surf.blit(
                     label,
                     (local.right + 6, local.y + (ROW_H - label.get_height()) // 2),
                 )
                 if hover:
-                    tip = BRANCH_LABEL[key]
+                    tip = t(f"branch.{key}", default=BRANCH_LABEL[key])
             elif action == "kind" and key is not None:
                 state = self._kind_state(shooters, catalog, key)
                 self._draw_check(surf, local, ink, state)
@@ -219,7 +223,7 @@ class EngagePalette:
             )
             if hover:
                 pygame.draw.rect(surf, (*ink, 28), local)
-            text = self._font.render(action.upper(), True, ink)
+            text = self._font.render(t(f"engage.{action}"), True, ink)
             surf.blit(
                 text,
                 (
@@ -229,13 +233,13 @@ class EngagePalette:
             )
             if hover:
                 if action == "aim":
-                    tip = "AIM map point"
+                    tip = t("engage.aim.tip")
                 elif action == "clr":
-                    tip = "Clear map aim"
+                    tip = t("engage.clr.tip")
                 elif action == "pick":
-                    tip = "PICK units  Shift+PICK clear"
+                    tip = t("engage.pick.tip")
                 else:
-                    tip = action.upper()
+                    tip = t(f"engage.{action}")
         renderer.overlay(surf, (self._panel.x, self._panel.y))
         if tip:
             text = self._font.render(tip, True, ink)
@@ -527,5 +531,5 @@ def _ammo_lines(shooters, catalog: DetectionCatalog, now: float) -> list[str]:
     if not rows:
         return []
     if len(rows) == 1:
-        return [f"AMMO  {rows[0][1]}"]
+        return [t("engage.ammo", cap=rows[0][1])]
     return [f"{kind_label(kind)}  {cap}" for kind, cap in rows[:4]]

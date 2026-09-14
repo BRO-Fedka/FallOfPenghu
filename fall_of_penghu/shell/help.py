@@ -5,13 +5,15 @@ from pathlib import Path
 
 import pygame
 
+from fall_of_penghu.shell.i18n import language, t
 from fall_of_penghu.shell.richtext import InlineIcons, blit_rich
+from fall_of_penghu.paths import package_dir, resource_root
 from fall_of_penghu.shell.theme import button, fonts, frame, ink_at, label, panel
 
-ROOT = Path(__file__).resolve().parents[2]
-HELP_JSON = Path(__file__).resolve().parents[1] / "data" / "help.json"
+ROOT = resource_root()
+HELP_DIR = package_dir() / "data"
 SHOT_DIR = ROOT / "assets" / "help"
-TAB_W = 120
+TAB_W = 128
 SHOT_H = 168
 SHOT_GAP = 10
 
@@ -35,6 +37,15 @@ class HelpBook:
                     self.index = i
                     break
         self._scroll = 0
+
+    def reload(self) -> None:
+        keep = None
+        if self.tabs:
+            keep = str(self.tabs[self.index].get("id") or "")
+        self._title, self._font, self._small = fonts()
+        self.tabs = _load_tabs()
+        self.index = min(self.index, max(0, len(self.tabs) - 1))
+        self.open(keep)
 
     def handle_event(self, event: pygame.event.Event, screen_w: int, screen_h: int) -> bool:
         box = _frame(screen_w, screen_h)
@@ -64,8 +75,8 @@ class HelpBook:
         box = _frame(screen_w, screen_h)
         surf = panel((box.w, box.h), 220)
         frame(surf, ink, 80)
-        label(surf, "FIELD MANUAL", self._title, ink, (16, 12))
-        hint = self._small.render("Tabs  ·  Esc back  ·  F1", True, ink)
+        label(surf, t("help.title"), self._title, ink, (16, 12))
+        hint = self._small.render(t("help.hint"), True, ink)
         surf.blit(hint, (box.w - hint.get_width() - 16, 18))
 
         self._tab_rects = []
@@ -196,14 +207,18 @@ def _frame(screen_w: int, screen_h: int) -> pygame.Rect:
 
 
 def _load_tabs() -> list[dict]:
+    lang = language()
+    path = HELP_DIR / f"help_{lang}.json"
+    if lang == "en" or not path.is_file():
+        path = HELP_DIR / "help.json"
     try:
-        data = json.loads(HELP_JSON.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return [
             {
                 "id": "map",
-                "title": "MAP",
-                "lead": "Help file missing.",
+                "title": t("help.missing_tab"),
+                "lead": t("help.missing"),
                 "shots": [],
                 "notes": [],
             }

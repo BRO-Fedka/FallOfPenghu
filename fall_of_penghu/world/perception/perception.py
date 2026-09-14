@@ -72,6 +72,7 @@ class Perception:
         self._stowed: dict[str, bool] = {}
         self._sat_was: bool | None = None
         self._spotted: set[tuple[str, str]] = set()
+        self.spotted_open_without_sat = False
 
     def bind_map(self, world: World) -> None:
         baked = getattr(world, "sim_bake", None)
@@ -236,9 +237,13 @@ class Perception:
             return
         self._sat_was = sat_on
         if sat_on:
-            post(world, SAT, "SAT up", 0.0, 0.0)
+            from fall_of_penghu.shell.i18n import t
+
+            post(world, SAT, t("notice.sat.up"), 0.0, 0.0)
         else:
-            post(world, SAT, "SAT down", 0.0, 0.0, sat_down=True)
+            from fall_of_penghu.shell.i18n import t
+
+            post(world, SAT, t("notice.sat.down"), 0.0, 0.0, sat_down=True)
 
     def _watch_spotted(self, world: World, sat_on: bool) -> None:
         from fall_of_penghu.world.entities.dynamic import DynamicObject
@@ -264,7 +269,6 @@ class Perception:
         darkness = self._darkness
         for eye in spotters:
             channel = "visual_primitive" if eye.kind == "drone" else "visual_advanced"
-            by = "drone" if eye.kind == "drone" else "scout"
             for unit in world.entities.items:
                 if not isinstance(unit, DynamicObject) or not unit.active:
                     continue
@@ -289,10 +293,16 @@ class Perception:
                 if hypot(unit.x - eye.x, unit.y - eye.y) > radius:
                     continue
                 self._spotted.add(key)
+                from fall_of_penghu.shell.i18n import t
+
                 post(
                     world,
                     SPOTTED,
-                    f"{kind_label(unit.kind)} spotted by {by}",
+                    t(
+                        "notice.spotted.by",
+                        kind=kind_label(unit.kind),
+                        by=kind_label(eye.kind),
+                    ),
                     unit.x,
                     unit.y,
                     object_ids=(unit.id, eye.id),

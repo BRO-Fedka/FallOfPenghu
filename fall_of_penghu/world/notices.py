@@ -30,7 +30,7 @@ CATEGORY_LABELS = {
 }
 CATEGORY_HINTS = {
     CONTACT: "Enemy unit first entered our snapshot.",
-    SPOTTED: "A visible drone or scout sees us. Skipped in the open when sat is up.",
+    SPOTTED: "A visible drone or scout sees us. Vehicles off-forest need the No SAT toggle.",
     LOSSES: "One of our units was wrecked.",
     AMMO: "Last magazine left, or the gun is empty.",
     SAT: "Our satellite window opened or closed.",
@@ -99,6 +99,21 @@ DEFAULT_SLOW = {
     THEATER: SPEED_1X,
     LIFT: SPEED_OFF,
 }
+
+
+def category_label(category: str) -> str:
+    from fall_of_penghu.shell.i18n import t
+
+    return t(f"notice.{category}", default=CATEGORY_LABELS.get(category, category.upper()))
+
+
+def category_hint(category: str) -> str:
+    from fall_of_penghu.shell.i18n import t
+
+    return t(
+        f"notice.{category}.hint",
+        default=CATEGORY_HINTS.get(category, ""),
+    )
 
 
 def default_kinds(category: str) -> dict[str, bool] | None:

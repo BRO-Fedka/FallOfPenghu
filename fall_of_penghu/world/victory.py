@@ -73,21 +73,22 @@ def ordered_kills(kills: dict[str, int] | None) -> list[tuple[str, int]]:
 
 
 def held_label(elapsed_s: float) -> str:
+    from fall_of_penghu.shell.i18n import counted, t
+
     minutes = int(max(0.0, float(elapsed_s)) // 60)
     if minutes < 1:
-        return "less than a minute"
+        return t("held.lt_minute")
     if minutes < 60:
-        return f"{minutes} {_en(minutes, 'minute')}"
+        return counted(minutes, "minute")
     hours = minutes // 60
     if hours < 24:
-        return f"{hours} {_en(hours, 'hour')}"
+        return counted(hours, "hour")
     days = hours // 24
     rest = hours % 24
-    day_s = f"{days} {_en(days, 'day')}"
     if rest == 0:
-        return day_s
-    return f"{day_s}, {rest} {_en(rest, 'hour')}"
-
-
-def _en(n: int, word: str) -> str:
-    return word if n == 1 else f"{word}s"
+        return counted(days, "day")
+    return t(
+        "held.days_hours",
+        days=counted(days, "day"),
+        hours=counted(rest, "hour"),
+    )

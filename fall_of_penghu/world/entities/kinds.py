@@ -25,7 +25,24 @@ KIND_LABELS: dict[str, str] = {
 
 
 def kind_label(kind: str) -> str:
-    return KIND_LABELS.get(kind, kind.replace("_", " ").title())
+    from fall_of_penghu.shell.i18n import t
+
+    fallback = KIND_LABELS.get(kind, kind.replace("_", " ").title())
+    return t(f"kind.{kind}", default=fallback)
+
+
+def localized_name(kind: str, name: str) -> str:
+    """Swap the English kind word in a stored name for the current language."""
+    en = KIND_LABELS.get(kind)
+    if not en:
+        return name
+    label = kind_label(kind)
+    if name == en:
+        return label
+    prefix = f"{en} "
+    if name.startswith(prefix):
+        return label + name[len(en) :]
+    return name
 
 
 def mark_static(kind: str) -> None:

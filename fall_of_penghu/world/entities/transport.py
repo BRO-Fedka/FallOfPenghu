@@ -5,9 +5,11 @@ from dataclasses import dataclass
 from math import hypot
 from typing import TYPE_CHECKING
 
+from fall_of_penghu.shell.i18n import t
 from fall_of_penghu.world.entities.command import SetRoute
 from fall_of_penghu.world.entities.dynamic import DynamicObject
 from fall_of_penghu.world.entities.game_object import FACTION_CHINA, FACTION_PLAYER, GameObject
+from fall_of_penghu.world.entities.kinds import kind_label
 from fall_of_penghu.world.notices import LIFT, post
 
 if TYPE_CHECKING:
@@ -96,7 +98,7 @@ class Transport:
         )
         beach_drop = dest_port is None
         if dest_full:
-            _notice(world, cargo.id, dest_pt, "Port full — landing on the beach")
+            _notice(world, cargo.id, dest_pt, t("notice.port.full"))
         busy = self._busy_ferries()
         idle = _nearest_idle_ferry(world, cargo.x, cargo.y, busy)
         if origin_port is not None and _ferry_count(origin_port) > 0:
@@ -174,11 +176,7 @@ class Transport:
             world,
             cargo.id,
             pickup,
-            (
-                "Unit proceeding to shore for embarkation"
-                if beach_load
-                else "Unit proceeding to port for embarkation"
-            ),
+            t("notice.embark.shore") if beach_load else t("notice.embark.port"),
         )
         return True
 
@@ -352,7 +350,7 @@ class Transport:
             )
         beach_drop = dest_port is None
         if dest_full:
-            _notice(world, cargo.id, dest_pt, "Port full — landing on the beach")
+            _notice(world, cargo.id, dest_pt, t("notice.port.full"))
         if dest_port is not None:
             drop = (dest_port.x, dest_port.y)
             drop_meet = drop
@@ -617,7 +615,7 @@ class Transport:
                     return True
                 ferry = self._spawn(world, home)
                 if ferry is None:
-                    _notice(world, cargo.id, job.pickup, "No ferry left at port")
+                    _notice(world, cargo.id, job.pickup, t("notice.ferry.gone"))
                     return False
                 job.ferry_id = ferry.id
                 _route(world, ferry, job.ferry_meet)
@@ -640,7 +638,7 @@ class Transport:
                     return False
                 ferry = self._spawn(world, home)
                 if ferry is None:
-                    _notice(world, cargo.id, job.pickup, "No ferry left at port")
+                    _notice(world, cargo.id, job.pickup, t("notice.ferry.gone"))
                     return False
                 job.ferry_id = ferry.id
             _stow(ferry, cargo, world)
@@ -700,7 +698,7 @@ class Transport:
             id=oid,
             faction=port.faction,
             kind="ferry",
-            name=f"Ferry {self._ferry_n}",
+            name=f"{kind_label('ferry')} {self._ferry_n}",
             x=port.x,
             y=port.y,
             speed_mps=world.catalog.speed_mps("ferry"),
@@ -818,11 +816,14 @@ class Transport:
             cargo = world.entities.get(job.cargo_id)
             ferry = world.entities.get(job.ferry_id)
             self._cargo_resume.pop(job.cargo_id, None)
-            if isinstance(cargo, DynamicObject) and cargo.stowed:
+            if isinstance(cargo, DynamicObject) and cargo.stowed and cargo.active:
                 _unstow(ferry if isinstance(ferry, DynamicObject) else None, cargo)
                 _place_on_beach(world, cargo, (cargo.x, cargo.y))
-            if isinstance(ferry, DynamicObject) and ferry.active:
-                ferry.route = None
+            if isinstance(ferry, DynamicObject):
+                if ferry.cargo_id == job.cargo_id:
+                    ferry.cargo_id = None
+                if ferry.active and ferry.id != object_id:
+                    ferry.route = None
         self._jobs = left
 
 
@@ -896,7 +897,7 @@ def _stow(ferry: DynamicObject, cargo: DynamicObject, world: World | None = None
         post(
             world,
             LIFT,
-            "Ferry loaded",
+            t("notice.ferry.loaded"),
             ferry.x,
             ferry.y,
             object_ids=(ferry.id, cargo.id),
@@ -921,7 +922,7 @@ def _unstow(
         post(
             world,
             LIFT,
-            "Cargo ashore",
+            t("notice.cargo.ashore"),
             cargo.x,
             cargo.y,
             object_ids=(cargo.id,) if ferry is None else (ferry.id, cargo.id),

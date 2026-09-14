@@ -6,9 +6,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from fall_of_penghu.paths import user_root
 from fall_of_penghu.world.clock import CALENDAR_DAY_S, CALENDAR_PER_SIM
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = user_root()
 SLOTS_DIR = ROOT / "saves" / "slots"
 
 
@@ -18,6 +19,18 @@ class SlotMeta:
     label: str
     path: Path
     saved_at: str = ""
+
+
+def alloc_slot_id() -> str:
+    """New campaign folder. Does not reuse another match's slot."""
+    SLOTS_DIR.mkdir(parents=True, exist_ok=True)
+    base = datetime.now().strftime("%Y%m%d-%H%M%S")
+    sid = base
+    n = 1
+    while (SLOTS_DIR / sid).exists():
+        n += 1
+        sid = f"{base}-{n}"
+    return sid
 
 
 def list_slots() -> list[SlotMeta]:
@@ -32,7 +45,11 @@ def list_slots() -> list[SlotMeta]:
         if not isinstance(data, dict):
             data = {}
         sid = str(data.get("id") or path.parent.name)
-        label = str(data.get("label") or sid)
+        clock = str(data.get("clock_label") or "")
+        raw = str(data.get("label") or "")
+        if "  ·  " in raw:
+            raw = raw.split("  ·  ", 1)[0].strip()
+        label = clock or raw or sid
         saved_at = str(data.get("saved_at") or "")
         out.append(SlotMeta(id=sid, label=label, path=path, saved_at=saved_at))
     out.sort(key=lambda slot: (slot.saved_at, slot.id), reverse=True)
@@ -52,14 +69,11 @@ def find_slot(slot_id: str) -> SlotMeta | None:
 
 
 def write_slot(payload: dict[str, Any], *, slot_id: str | None = None) -> SlotMeta:
-    sid = slot_id or "autosave"
+    sid = slot_id or alloc_slot_id()
     folder = SLOTS_DIR / sid
     folder.mkdir(parents=True, exist_ok=True)
     clock = str(payload.get("clock_label") or "")
-    n = len(payload.get("objects") or [])
     label = clock if clock else sid
-    if n:
-        label = f"{label}  ·  {n} objects"
     saved_at = datetime.now().isoformat(timespec="seconds")
     match_path = folder / "match.json"
     tmp = folder / "match.json.tmp"
@@ -79,20 +93,25 @@ def write_slot(payload: dict[str, Any], *, slot_id: str | None = None) -> SlotMe
 
 def ago_phrase(elapsed_s: float) -> str:
     """How long the match clock has run since the declaration of war."""
+    from fall_of_penghu.shell.i18n import counted, t
+
     minutes = int(max(0.0, float(elapsed_s)) // 60)
     if minutes < 1:
-        return "less than a minute ago"
+        return t("ago.lt_minute")
     if minutes < 60:
-        return f"{minutes} {_en(minutes, 'minute')} ago"
+        return t("ago.past", span=counted(minutes, "minute"))
     hours = minutes // 60
     if hours < 24:
-        return f"{hours} {_en(hours, 'hour')} ago"
+        return t("ago.past", span=counted(hours, "hour"))
     days = hours // 24
     rest = hours % 24
-    day_s = f"{days} {_en(days, 'day')}"
     if rest == 0:
-        return f"{day_s} ago"
-    return f"{day_s}, {rest} {_en(rest, 'hour')} ago"
+        return t("ago.past", span=counted(days, "day"))
+    return t(
+        "ago.days_hours",
+        days=counted(days, "day"),
+        hours=counted(rest, "hour"),
+    )
 
 
 def slot_ago(slot_id: str) -> str:
@@ -106,10 +125,6 @@ def slot_ago(slot_id: str) -> str:
     else:
         elapsed = float(clock.get("simulation_time") or 0.0) * CALENDAR_PER_SIM
     return ago_phrase(elapsed)
-
-
-def _en(n: int, word: str) -> str:
-    return word if n == 1 else f"{word}s"
 
 
 def read_slot(slot_id: str) -> dict[str, Any] | None:

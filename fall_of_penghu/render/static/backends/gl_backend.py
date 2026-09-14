@@ -29,6 +29,7 @@ from fall_of_penghu.render.static.veg import VEG_DETAIL_CROWNS, VegParams
 from fall_of_penghu.render.static.urban import UrbanParams, RoadParams
 from fall_of_penghu.render.static.piers.pier_params import PierParams
 from fall_of_penghu.render.static.veg.vegfield import _penghu_frame
+from fall_of_penghu.paths import package_dir, user_root
 from fall_of_penghu.render.static.water import WaterParams
 from fall_of_penghu.render.static.scene import (
     AIRPORTS_FADE_FULL_M,
@@ -41,18 +42,8 @@ from fall_of_penghu.render.static.scene import (
     palette_for,
 )
 
-SHADER_DIR = Path(__file__).resolve().parent / "shaders"
-
-
-def _repo_root() -> Path:
-    here = Path(__file__).resolve()
-    for p in here.parents:
-        if (p / "penghu_map_v1").is_dir() or (p / "main.py").is_file():
-            return p
-    return here.parents[4]
-
-
-MESH_CACHE = _repo_root() / "output" / "gl_meshes_v1.pkl"
+SHADER_DIR = package_dir() / "render" / "static" / "backends" / "shaders"
+MESH_CACHE = user_root() / "output" / "gl_meshes_v1.pkl"
 FULLSCREEN_TRI = array("f", [-1.0, -1.0, 3.0, -1.0, -1.0, 3.0])
 MSAA_SAMPLES = 4
 AA_SAMPLES = {"off": 0, "fxaa": 0, "msaa2": 2, "msaa4": 4, "msaa8": 8}

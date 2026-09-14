@@ -27,6 +27,7 @@ SAT_RED = (220, 56, 48)
 JOBS = (
     ("pause.png", "pause.png", WHITE),
     ("help.png", "help.png", WHITE),
+    ("globe.png", "globe.png", WHITE),
     ("map.png", "map.png", WHITE),
     ("radar.png", "radar.png", WHITE),
     ("satellite.png", "satellite_green.png", SAT_GREEN),

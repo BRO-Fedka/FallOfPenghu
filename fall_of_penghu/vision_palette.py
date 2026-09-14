@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import pygame
 
+from fall_of_penghu.shell.i18n import t
+from fall_of_penghu.shell.theme import ui_font
 from fall_of_penghu.vision import VISION_DEFAULT_ON, VISION_RINGS
 
 PANEL_H = 40
@@ -18,7 +20,7 @@ class VisionPalette:
         self.x = 12
         self.y = PANEL_H + 220
         self.enabled: set[str] = set(VISION_DEFAULT_ON)
-        self._font = pygame.font.SysFont("consolas", 13)
+        self._font = ui_font(13)
         self._panel = pygame.Rect(0, 0, 1, 1)
         self._title = pygame.Rect(0, 0, 1, 1)
         self._rows: list[tuple[pygame.Rect, str]] = []
@@ -73,7 +75,7 @@ class VisionPalette:
         surf = pygame.Surface((self._panel.w, self._panel.h), pygame.SRCALPHA)
         surf.fill((8, 10, 12, 200))
         pygame.draw.rect(surf, (*ink, 80), surf.get_rect(), 1)
-        title = self._font.render("VISION", True, ink)
+        title = self._font.render(t("panel.vision"), True, ink)
         surf.blit(title, (PAD, (TITLE_H - title.get_height()) // 2))
         for rect, ring_id in self._rows:
             local = pygame.Rect(rect.x - self.x, rect.y - self.y, CHECK, CHECK)
@@ -95,8 +97,10 @@ class VisionPalette:
                     (inner.right - 1, inner.y),
                     2,
                 )
-            label = next(item[4] for item in VISION_RINGS if item[0] == ring_id)
-            text = self._font.render(label, True, ink)
+            fallback = next(item[4] for item in VISION_RINGS if item[0] == ring_id)
+            text = self._font.render(
+                t(f"vision.{ring_id}", default=fallback), True, ink
+            )
             surf.blit(
                 text,
                 (local.right + 6, local.y + (CHECK - text.get_height()) // 2),

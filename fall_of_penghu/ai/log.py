@@ -7,7 +7,9 @@ class DecisionLog:
     """China AI decisions. Console and logs/china_ai.log."""
 
     def __init__(self, path: Path | None = None) -> None:
-        root = Path(__file__).resolve().parents[2]
+        from fall_of_penghu.paths import user_root
+
+        root = user_root()
         self.path = path if path is not None else root / "logs" / "china_ai.log"
         self._fh = None
         try:

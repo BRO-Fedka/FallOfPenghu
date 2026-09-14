@@ -6,7 +6,9 @@ from pathlib import Path
 
 import pygame
 
-ROOT = Path(__file__).resolve().parents[3]
+from fall_of_penghu.paths import resource_root
+
+ROOT = resource_root()
 HUD_ICON_DIR = ROOT / "assets" / "icons" / "hud"
 
 

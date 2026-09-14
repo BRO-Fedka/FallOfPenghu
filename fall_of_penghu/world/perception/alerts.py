@@ -21,13 +21,17 @@ class _Cluster:
 
 
 def _label(kinds: list[str]) -> str:
+    from fall_of_penghu.shell.i18n import t
+
     if not kinds:
-        return "Contact"
+        return t("notice.contact.any")
     if all(k == kinds[0] for k in kinds):
         name = kind_label(kinds[0])
         n = len(kinds)
-        return f"{name} contact" if n == 1 else f"{name} contact ×{n}"
-    return f"Contacts ×{len(kinds)}"
+        if n == 1:
+            return t("notice.contact.one", name=name)
+        return t("notice.contact.many", name=name, n=n)
+    return t("notice.contact.mixed", n=len(kinds))
 
 
 class AlertTracker:

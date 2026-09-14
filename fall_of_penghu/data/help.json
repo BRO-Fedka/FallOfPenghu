@@ -64,7 +64,8 @@
         }
       ],
       "notes": [
-        "Healing does not run while the unit is moving or was just hurt."
+        "Healing does not run while the unit is moving or was just hurt.",
+        "/aa_pickup is strong against /infantry. /infantry is strong against /tank. /tank is strong against /aa_pickup. Tanks do not fire at infantry."
       ]
     },
     {

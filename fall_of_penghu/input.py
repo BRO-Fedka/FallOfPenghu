@@ -88,10 +88,6 @@ class Input:
             elif event.key == pygame.K_F7:
                 if camera.debug_mode:
                     clock.set_speed(DEBUG_SPEED)
-            elif event.key == pygame.K_F12:
-                camera.debug_mode = not camera.debug_mode
-                if not camera.debug_mode:
-                    clock.cap_to_player_speeds()
             elif event.key in (pygame.K_HOME, pygame.K_c):
                 camera.fly_to(self.home_x, self.home_y, self.home_view_m)
             elif (

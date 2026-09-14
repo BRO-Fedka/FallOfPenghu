@@ -1,0 +1,131 @@
+{
+  "format": "fall-of-penghu-help",
+  "version": 2,
+  "tabs": [
+    {
+      "id": "overview",
+      "title": "概览",
+      "lead": "你守着澎湖。不会有援军。 /n中国从海上和空中进攻。 /n你的任务是尽量撑得更久。 /n岛上再也没有你的地面部队时，中国获胜。 /n飞机和舰船守不住岛。只有地面单位可以: /infantry /tank /artillery /aa_pickup /aaw /truck。 /n有人居住的岛不要不战而弃。瞭望哨就在那里。 /n中国会派出登陆舰 /landing_ship_c、步兵 /infantry_c、侦察机 /scout_c 和神风无人机 /drone_c。 /n森林能藏身。开阔地很远就能看见。 /n手册其余部分: 镜头、命令、开火、视野、消息、渡轮。",
+      "shots": [],
+      "notes": [
+        "用 /esc 或右侧 /pause 暂停。暂停不会退出游戏。",
+        "本手册用 /f1 或 /help 打开。"
+      ]
+    },
+    {
+      "id": "camera",
+      "title": "镜头",
+      "lead": "移动镜头用 /W /A /S /D 或方向键。也可在空地上按住 /lmb 拖动。 /n缩放用 /Q /E 或 /wheel。 /n打开暂停用 /esc 或 /pause。 /n雷达模式用 /R。 /n回到澎湖按 /home 或 /C。",
+      "shots": [
+        {
+          "file": "help_camera_speed.png",
+          "caption": "速度: /f2 /f3 /f4 /f5 或顶栏按钮。0× 停止时间。"
+        },
+        {
+          "file": "help_camera_radar.png",
+          "caption": "/R 或 VIEW MODE: /map 地图、/radar 雷达。"
+        }
+      ],
+      "notes": [
+        "/esc 打开暂停。游戏不会退出。"
+      ]
+    },
+    {
+      "id": "units",
+      "title": "单位",
+      "lead": "选择或取消选择用 /lmb。再加一个单位用 /shift + /lmb。 /n框选群体: 按住 /shift + /lmb 拖框。 /n移动用 /rmb。 /n航路点用 /shift + /rmb。只对海上 /ferry 和空中 /drone 有效。 /n地面单位不能在水上走。新的 /rmb 会画出新路径。",
+      "shots": [
+        {
+          "file": "help_units_panel.png",
+          "caption": "UNITS 窗口。取消勾选会从地图上隐藏该类型。单位仍在世界里。"
+        }
+      ],
+      "notes": [
+        "可以拖动 UNITS 的标题栏。",
+        "Air、Land、Sea、Static 用左侧箭头展开。"
+      ]
+    },
+    {
+      "id": "warfare",
+      "title": "作战",
+      "lead": "RANGE 画出 /infantry /aa_pickup /tank /aaw /artillery 的武器射程。 /n/G 隐藏或恢复全部 RANGE 圈。 /n选中射手时出现 TARGETS。 /n FIRE — 炮位按过滤器自行射击。 /n HOLD — 保持沉默，直到你切回 FIRE。 /nTARGETS 的勾选决定可以打谁: /drone_c /scout_c /landing_ship_c /infantry_c 等。 /n AIM、PICK、CLR 只属于 /artillery。 /n AIM — 下一次在地图上 /lmb 设定落点。CLR 清除。 /n PICK — 对特定敌人 /lmb。框选也可以。 /n/shift + PICK 清空该列表。 /n/rmb 取消 AIM、PICK 或港口与渡轮命令。 /n火炮只在静止时射击。 /n单位静止且最近没挨打会自行回血。回满需要两个游戏日。 /n弹药不会自动补充。",
+      "shots": [
+        {
+          "file": "help_warfare_range.png",
+          "caption": "RANGE。勾选 /infantry /aa_pickup /tank /aaw /artillery 的圈。"
+        },
+        {
+          "file": "help_warfare_targets.png",
+          "caption": "TARGETS。HOLD 与 FIRE，以及 Air、Land、Sea、Static 过滤。"
+        },
+        {
+          "file": "help_warfare_arty.png",
+          "caption": "仅 /artillery: 在地图上 AIM，散射圈。PICK 标记优先目标。"
+        }
+      ],
+      "notes": [
+        "移动中或刚受伤时不会回血。",
+        "/aa_pickup 克 /infantry。/infantry 克 /tank。/tank 克 /aa_pickup。坦克不对步兵开火。"
+      ]
+    },
+    {
+      "id": "intel",
+      "title": "情报",
+      "lead": "你看见的是己方传感器看见的。中国也一样。 /nVISION 画出视野圈。Primitive 是肉眼。Advanced 是远程光学，如 /scout_c。 /n开阔地看得最远。草地更近。森林更近且更好藏。 /n右上 /sat 是中国卫星。 /n绿色 /sat: 卫星在看。红色 /sat_red: 沉默。旁边有计时。 /n它在看时，能看见开阔地和草地上的车辆与舰船。 /n看不见步兵 /infantry。 /n森林里轨道上看不见任何人。 /n/sat 为绿色时，/drone_c 或 /scout_c 的 SPOTTED 只来自森林。 /n岛上有你的地面部队时，岛是你的。 /n只有中方地面部队时，岛归对方。/port 和 /airfield 一并易手。 /n空中 /drone /scout 与海上 /ferry /ship 守不住岛。 /n失去有人居住的岛，也等于失去瞭望哨。",
+      "shots": [
+        {
+          "file": "help_intel_vision.png",
+          "caption": "VISION。开阔地默认开启。草地和森林需自行打开。"
+        },
+        {
+          "file": "help_intel_sat.png",
+          "caption": "顶栏右侧 /sat。计时是窗口还开多久，或下次何时打开。"
+        },
+        {
+          "file": "help_intel_island.png",
+          "caption": "己方地面部队没了、中方地面部队在时，岛屿会变色。"
+        }
+      ],
+      "notes": []
+    },
+    {
+      "id": "messages",
+      "title": "消息",
+      "lead": "CONTACTS 日志在右下。 /n CONTACT — 首次看见敌人: /drone_c /scout_c /landing_ship_c /ship_c。 /n SPOTTED — 对方 /drone_c 或 /scout_c 看见你。 /n LOSSES — 己方被摧毁。 /n AMMO — 弹匣将尽或已空。 /n SAT — 卫星 /sat 上线或 /sat_red 中断。 /n THEATER — 岛屿易手或夺回，或登陆 /landing_ship_c。 /n LIFT — /ferry 装载或卸载。 /n点击一行把镜头拉过去。 /n SET 打开过滤: 显示什么，以及是否降到 1× 或 0×。 /n WIN 取消停靠。DOCK 重新钉住。",
+      "shots": [
+        {
+          "file": "help_messages_contacts.png",
+          "caption": "CONTACTS。SET 是设置。WIN 和 DOCK 放开或钉住窗口。"
+        },
+        {
+          "file": "help_messages_set.png",
+          "caption": "SET 里每类都有聊天显示、速度 OFF / 1× / 0× 和图标过滤。"
+        }
+      ],
+      "notes": []
+    },
+    {
+      "id": "sea",
+      "title": "海上",
+      "lead": "/ferry 只运地面单位: /infantry /tank /artillery /aa_pickup /aaw /truck。 /n选中你的 /port 再 Launch，然后在水上 /lmb — 船体离开库存。 /n Recall，再 /lmb 你的 /ferry — 空船体回到库存。港口最多 20 艘。 /n选中 /ferry: Load 再 /lmb 地面单位登船。Unload 再 /lmb 岸边或你的 /port 上岸。 /n/bridge: 选中后 Destroy。没有桥，地面单位不能步行过海峡。",
+      "shots": [
+        {
+          "file": "help_sea_port.png",
+          "caption": "/port: 在水上 Launch，对你的 /ferry Recall。库存显示在港口上。"
+        },
+        {
+          "file": "help_sea_ferry.png",
+          "caption": "/ferry: Load — 点击己方单位。Unload — 点击岸边或港口。"
+        },
+        {
+          "file": "help_sea_bridge.png",
+          "caption": "/bridge。Destroy 立即炸毁。地面单位不能再步行过海峡。"
+        }
+      ],
+      "notes": [
+        "再次点击同一港口或渡轮命令会取消。",
+        "此模式下 /rmb 也会取消命令。"
+      ]
+    }
+  ]
+}

@@ -9,7 +9,9 @@ from pathlib import Path
 
 import pygame
 
-ROOT = Path(__file__).resolve().parents[2]
+from fall_of_penghu.paths import resource_root
+
+ROOT = resource_root()
 THEATER_DIR = ROOT / "assets" / "menu_theater"
 MANIFEST = THEATER_DIR / "manifest.json"
 
@@ -206,9 +208,9 @@ class MenuTheater:
         self._t = 0.0
         self._cycle_i = 0
         self.weights = {"radar": 0.0, "day": 0.0, "night": 0.0}
-        w, h = self._size
-        self.cx = w * 0.5
-        self.cy = h * 0.5
+        minx, maxx, miny, maxy = self._frame()
+        self.cx = random.uniform(minx, maxx)
+        self.cy = random.uniform(miny, maxy)
         self._head = random.uniform(0.0, math.tau)
         self._clear_jump()
 

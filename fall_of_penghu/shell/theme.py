@@ -6,18 +6,35 @@ from fall_of_penghu.render.static.tod import palette_at
 
 PANEL = (8, 10, 12)
 RADIUS = 3
+LATIN_FACE = "consolas"
+CJK_FACE = (
+    "microsoftyahei,msyh,yugothic,meiryo,msgothic,"
+    "simhei,simsun,notosanscjk,arialunicodems,arial"
+)
+_cache: dict[tuple[str, int, bool], pygame.font.Font] = {}
 
 
 def ink_at(tod: float = 0.5) -> tuple[int, int, int]:
     return palette_at(tod)["hud"]
 
 
+def face() -> str:
+    from fall_of_penghu.shell.i18n import language
+
+    return CJK_FACE if language() in ("ja", "zh") else LATIN_FACE
+
+
+def ui_font(size: int, bold: bool = False) -> pygame.font.Font:
+    key = (face(), int(size), bool(bold))
+    font = _cache.get(key)
+    if font is None:
+        font = pygame.font.SysFont(key[0], key[1], bold=key[2])
+        _cache[key] = font
+    return font
+
+
 def fonts() -> tuple[pygame.font.Font, pygame.font.Font, pygame.font.Font]:
-    return (
-        pygame.font.SysFont("consolas", 22),
-        pygame.font.SysFont("consolas", 16),
-        pygame.font.SysFont("consolas", 14),
-    )
+    return ui_font(22), ui_font(16), ui_font(14)
 
 
 def panel(size: tuple[int, int], alpha: int = 200) -> pygame.Surface:

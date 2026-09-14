@@ -230,6 +230,7 @@ class NavalOps:
             return
         busy = world.transport.busy_ids()
         assault = None if intel.assault is None else intel.assault.island
+        contested = _contested_held(world, held)
         now = world.clock.simulation_time
         if world.entities.planner is None:
             return
@@ -243,7 +244,9 @@ class NavalOps:
             for kind in ("infantry", "artillery"):
                 if kind in inbound or sent >= 2 or not idle:
                     continue
-                unit = _surplus_unit(world, held, assault, dest_iid, kind, busy)
+                unit = _surplus_unit(
+                    world, held, assault, dest_iid, kind, busy, contested
+                )
                 if unit is None:
                     continue
                 here = unit.island_id()
@@ -538,6 +541,28 @@ def _idle_shore_boats(world: World) -> list[DynamicObject]:
     return out
 
 
+def _contested_held(
+    world: World, held: dict[int, list[DynamicObject]]
+) -> set[int]:
+    """Islands China holds that still have visible player land units."""
+    planner = world.entities.planner
+    if planner is None or not held:
+        return set()
+    islands = planner.land.islands
+    out: set[int] = set()
+    for obj in world.perception.visible_objects(FACTION_CHINA):
+        if obj.faction != FACTION_PLAYER or not obj.active:
+            continue
+        if getattr(obj, "stowed", False):
+            continue
+        if getattr(obj, "mobility", "") != "land":
+            continue
+        at = islands.at(obj.x, obj.y)
+        if at in held:
+            out.add(at)
+    return out
+
+
 def _surplus_unit(
     world: World,
     held: dict[int, list[DynamicObject]],
@@ -545,32 +570,18 @@ def _surplus_unit(
     dest_iid: int,
     kind: str,
     busy: set[str],
+    contested: set[int],
 ) -> DynamicObject | None:
     planner = world.entities.planner
     if planner is None:
         return None
-    islands = planner.land.islands
     best = None
     best_d = 1e30
     dest = island_stand(world, dest_iid)
     if dest is None:
         return None
     for island, units in held.items():
-        if island == dest_iid:
-            continue
-        fighting = False
-        for obj in world.perception.visible_objects(FACTION_CHINA):
-            if obj.faction != FACTION_PLAYER or not obj.active:
-                continue
-            if getattr(obj, "stowed", False):
-                continue
-            if getattr(obj, "mobility", "") != "land":
-                continue
-            at = islands.at(obj.x, obj.y)
-            if at == island:
-                fighting = True
-                break
-        if fighting:
+        if island == dest_iid or island in contested:
             continue
         for unit in units:
             if unit.kind != kind or unit.id in busy or unit.stowed:

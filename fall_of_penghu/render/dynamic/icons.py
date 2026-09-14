@@ -16,9 +16,10 @@ from fall_of_penghu.world.entities.game_object import (
     FACTION_PLAYER,
     FACTION_TAIWAN,
 )
+from fall_of_penghu.paths import resource_root
 from fall_of_penghu.world.entities.kinds import SKIP_PLACE, mark_static
 
-ROOT = Path(__file__).resolve().parents[3]
+ROOT = resource_root()
 ICON_DIR = ROOT / "assets" / "icons"
 CHIP = 24
 

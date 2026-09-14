@@ -10,14 +10,17 @@ from fall_of_penghu.render.dynamic.hud_icons import HudIcons
 from fall_of_penghu.render.dynamic.icons import CHIP, IconStore
 from fall_of_penghu.render.static.tod import palette_at, phase_label
 from fall_of_penghu.selection import Selection
+from fall_of_penghu.shell.i18n import t
+from fall_of_penghu.shell.theme import ui_font
 from fall_of_penghu.world.clock import DEBUG_SPEED, SPEEDS, Clock
-from fall_of_penghu.world.combat.doctrine import LABELS
+from fall_of_penghu.world.combat.doctrine import doctrine_label
 from fall_of_penghu.world.entities import (
     Entities,
     FACTION_PLAYER,
     GameObject,
     WreckObject,
 )
+from fall_of_penghu.world.entities.kinds import localized_name
 from fall_of_penghu.debug_palette import DebugPalette
 from fall_of_penghu.engage_palette import EngagePalette
 from fall_of_penghu.display_palette import DisplayPalette
@@ -29,6 +32,18 @@ from fall_of_penghu.world.perception import Perception, format_hhmm
 PANEL_H = 40
 DEBUG_H = 44
 FPS_H = 24
+
+
+def footer_inset(debug: bool) -> int:
+    """Bottom chrome: debug strip, else FPS only while F11 is on."""
+    from fall_of_penghu.profile import prof
+
+    if debug:
+        return DEBUG_H
+    if prof.enabled:
+        return FPS_H
+    return 0
+
 BTN_W = 52
 BTN_H = 26
 BTN_GAP = 6
@@ -45,12 +60,12 @@ SAT_ON = (72, 220, 96)
 SAT_OFF = (220, 56, 48)
 PORT_BTN_W = 86
 PORT_BTN_H = 24
-PORT_HINT = {
-    "launch": "Click destination",
-    "recall": "Click a ferry",
-    "load": "Click a unit",
-    "unload": "Click destination",
-    "destroy": "Destroy this bridge",
+PORT_HINT_KEYS = {
+    "launch": "port.hint.launch",
+    "recall": "port.hint.recall",
+    "load": "port.hint.load",
+    "unload": "port.hint.unload",
+    "destroy": "port.hint.destroy",
 }
 
 
@@ -67,10 +82,10 @@ class Hud:
     """Chrome overlay. Top bar is always on; debug text only in debug_mode."""
 
     def __init__(self) -> None:
-        self.font = pygame.font.SysFont("consolas", 16)
-        self.small = pygame.font.SysFont("consolas", 14)
-        self.day_font = pygame.font.SysFont("consolas", 20, bold=True)
-        self.digital_font = pygame.font.SysFont("consolas", 18)
+        self.font = ui_font(16)
+        self.small = ui_font(14)
+        self.day_font = ui_font(20, bold=True)
+        self.digital_font = ui_font(18)
         self._buttons: list[tuple[pygame.Rect, float]] = []
         self._mode_buttons: list[tuple[pygame.Rect, bool]] = []
         self._side_buttons: list[tuple[pygame.Rect, str]] = []
@@ -114,7 +129,7 @@ class Hud:
 
         if prof.enabled and prof.panel.hits(x, y):
             return True
-        inset = DEBUG_H if debug else FPS_H
+        inset = footer_inset(debug)
         if chat is not None and chat.hits(x, y, screen_w, screen_h, inset):
             return True
         if debug and palette is not None and palette.hits(x, y):
@@ -147,7 +162,7 @@ class Hud:
         y = (PANEL_H - BTN_H) // 2
         x = 12
         self._day_x = x
-        day_w = self.day_font.size("Day 99")[0]
+        day_w = self.day_font.size(t("hud.day", n=99))[0]
         x += day_w + 10
         self._analog_rect = pygame.Rect(
             x, (PANEL_H - ANALOG_D) // 2, ANALOG_D, ANALOG_D
@@ -166,7 +181,7 @@ class Hud:
             x += BTN_W + BTN_GAP
         x += MODE_GAP
         self._mode_label_x = x
-        label_w = self.small.size("VIEW MODE:")[0]
+        label_w = self.small.size(t("hud.view_mode"))[0]
         x += label_w + BTN_GAP
         self._mode_buttons = [
             (pygame.Rect(x, y, MODE_BTN_W, BTN_H), False),
@@ -374,7 +389,7 @@ class Hud:
         bar = pygame.Surface((screen_w, PANEL_H), pygame.SRCALPHA)
         bar.fill((8, 10, 12, 170))
 
-        day_surf = self.day_font.render(f"Day {clock.day_number()}", True, ink)
+        day_surf = self.day_font.render(t("hud.day", n=clock.day_number()), True, ink)
         bar.blit(day_surf, (self._day_x, (PANEL_H - day_surf.get_height()) // 2))
         self._draw_analog(bar, self._analog_rect, clock.time_of_day, ink)
         self._draw_digital(bar, clock.digital_label(clock_12h))
@@ -394,7 +409,7 @@ class Hud:
                 ),
             )
 
-        mode_label = self.small.render("VIEW MODE:", True, ink)
+        mode_label = self.small.render(t("hud.view_mode"), True, ink)
         bar.blit(
             mode_label,
             (self._mode_label_x, (PANEL_H - mode_label.get_height()) // 2),
@@ -436,7 +451,7 @@ class Hud:
         self._blit_rail(renderer, mouse_screen)
 
         if defeated:
-            banner = self.font.render("DEFEAT — no player units remain on the islands", True, ink)
+            banner = self.font.render(t("hud.defeat"), True, ink)
             box = pygame.Surface(
                 (banner.get_width() + 24, banner.get_height() + 16), pygame.SRCALPHA
             )
@@ -448,7 +463,7 @@ class Hud:
             )
 
         if hover is not None:
-            tip = hover.name
+            tip = localized_name(hover.kind, hover.name)
             doctrine = getattr(hover, "doctrine", None)
             if hover.kind in (
                 "aaw",
@@ -457,7 +472,7 @@ class Hud:
                 "tank",
                 "artillery",
             ) and doctrine:
-                tip = f"{tip}  {LABELS.get(doctrine, doctrine)}"
+                tip = f"{tip}  {doctrine_label(doctrine)}"
             hp = getattr(hover, "hp", None)
             max_hp = getattr(hover, "max_hp", None)
             if hp is not None and max_hp is not None and float(max_hp) > 1.5:
@@ -468,18 +483,18 @@ class Hud:
                     tip = f"{tip}  {ammo}"
             if hover.kind == "port":
                 stock = int(getattr(hover, "ferries", 0) or 0)
-                tip = f"{tip}  ferries {stock}/20"
+                tip = f"{tip}  {t('hud.ferries', stock=stock)}"
             cargo = None
             if hover.kind == "ferry" and entities is not None:
                 cargo_id = getattr(hover, "cargo_id", None)
                 if cargo_id:
                     cargo = entities.get(cargo_id)
             if cargo is not None:
-                tip = f"{tip}  {cargo.name}"
+                tip = f"{tip}  {localized_name(cargo.kind, cargo.name)}"
             if not hover.active:
-                tip = f"{tip}  wrecked"
+                tip = f"{tip}  {t('hud.wrecked')}"
             if selection_count > 1:
-                tip = f"{tip}  ({selection_count} selected)"
+                tip = f"{tip}  {t('hud.selected', n=selection_count)}"
             text = self.small.render(tip, True, ink)
             cargo_icon = None
             if cargo is not None:
@@ -525,7 +540,7 @@ class Hud:
             hint = (
                 "WASD pan  LMB select  Shift box  RMB move  "
                 "Shift+RMB sea/air waypoints  Q/E zoom  "
-                "Shift+Del delete  F11 frame prof  F12 debug  "
+                "Shift+Del delete  F11 frame prof  Ctrl+F12 debug  "
                 "red=C snapshot  yellow=C imprint  "
                 "heat R/G/B=threat/land/AA  Esc pause"
             )
@@ -534,7 +549,7 @@ class Hud:
             footer.blit(self.small.render(hud, True, ink), (10, 4))
             footer.blit(self.small.render(hint, True, ink), (10, 22))
             renderer.overlay(footer, (0, screen_h - DEBUG_H))
-        else:
+        elif footer_inset(False) > 0:
             footer = pygame.Surface((screen_w, FPS_H), pygame.SRCALPHA)
             footer.fill((8, 10, 12, 170))
             label = self.small.render(f"{fps:5.1f} fps", True, ink)
@@ -543,7 +558,7 @@ class Hud:
 
         self._blit_port_menu(renderer, selection, entities, ink, screen_w, screen_h)
         if selection is not None and selection.artillery_aim:
-            hint = self.small.render("Click map to aim  CLR to cancel", True, ink)
+            hint = self.small.render(t("hud.aim"), True, ink)
             box = pygame.Surface(
                 (hint.get_width() + 12, hint.get_height() + 8), pygame.SRCALPHA
             )
@@ -551,7 +566,7 @@ class Hud:
             box.blit(hint, (6, 4))
             renderer.overlay(box, (12, PANEL_H + 8))
         elif selection is not None and selection.pick_targets:
-            hint = self.small.render("Click or box enemy units  RMB done", True, ink)
+            hint = self.small.render(t("hud.pick"), True, ink)
             box = pygame.Surface(
                 (hint.get_width() + 12, hint.get_height() + 8), pygame.SRCALPHA
             )
@@ -701,7 +716,7 @@ class Hud:
         now_sim,
     ) -> None:
         mx, my = mouse_screen
-        inset = DEBUG_H if debug else FPS_H
+        inset = footer_inset(debug)
         over = bool(
             (debug and palette is not None and palette.hits(mx, my))
             or (engage is not None and engage.hits(mx, my, selection, entities))
@@ -781,11 +796,11 @@ class Hud:
         stock = int(getattr(port, "ferries", 0) or 0) if port is not None else 0
         cargo_on = bool(getattr(ferry, "cargo_id", None)) if ferry is not None else False
         labels = {
-            "launch": "Launch",
-            "recall": "Recall",
-            "load": "Load",
-            "unload": "Unload",
-            "destroy": "Destroy",
+            "launch": t("port.launch"),
+            "recall": t("port.recall"),
+            "load": t("port.load"),
+            "unload": t("port.unload"),
+            "destroy": t("port.destroy"),
         }
         for rect, cmd in self._port_buttons:
             armed = selection is not None and selection.port_cmd == cmd
@@ -818,7 +833,8 @@ class Hud:
             renderer.overlay(surf, (rect.x, rect.y))
         if selection is None or selection.port_cmd is None:
             return
-        hint = PORT_HINT.get(selection.port_cmd)
+        key = PORT_HINT_KEYS.get(selection.port_cmd)
+        hint = t(key) if key else None
         if not hint:
             return
         text = self.small.render(hint, True, ink)

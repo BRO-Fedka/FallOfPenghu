@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from fall_of_penghu.world.entities.dynamic import DynamicObject
 from fall_of_penghu.world.entities.game_object import FACTION_CHINA, FACTION_PLAYER, GameObject
 from fall_of_penghu.world.entities.kinds import SHOT_KINDS, is_static_kind
 
@@ -10,11 +11,17 @@ if TYPE_CHECKING:
 
 
 def wreck(obj: GameObject, world: World | None = None) -> None:
-    """Mark destroyed. Statics stay in the world; a sunk ferry wrecks cargo."""
+    """Destroy it. Statics stay wrecked in place; dynamics leave the world."""
     if not obj.active and float(getattr(obj, "hp", 0.0) or 0.0) <= 0.0:
+        if world is not None and isinstance(obj, DynamicObject):
+            world.entities.discard(obj.id)
         return
     obj.active = False
     obj.hp = 0.0
+    if obj.kind in ("drone", "bridge"):
+        from fall_of_penghu.shell.audio import play
+
+        play("explosion")
     if getattr(obj, "route", None) is not None:
         obj.route = None
     cargo_id = getattr(obj, "cargo_id", None)
@@ -27,10 +34,12 @@ def wreck(obj: GameObject, world: World | None = None) -> None:
 
             ids = (obj.id, cargo.id) if cargo is not None else (obj.id,)
             icons = (obj.kind, cargo.kind) if cargo is not None else (obj.kind,)
+            from fall_of_penghu.shell.i18n import t
+
             post(
                 world,
                 LOSSES,
-                f"{kind_label(obj.kind)} lost",
+                t("notice.lost", kind=kind_label(obj.kind)),
                 obj.x,
                 obj.y,
                 object_ids=ids,
@@ -45,6 +54,8 @@ def wreck(obj: GameObject, world: World | None = None) -> None:
         from fall_of_penghu.world.victory import check_china_victory
 
         check_china_victory(world)
+    if world is not None and isinstance(obj, DynamicObject):
+        world.entities.discard(obj.id)
 
 
 def apply_damage(obj: GameObject, amount: float, world: World | None = None) -> bool:

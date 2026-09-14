@@ -5,6 +5,7 @@ from dataclasses import dataclass
 import pygame
 
 from fall_of_penghu.render.dynamic.icons import CHIP, IconStore
+from fall_of_penghu.shell.i18n import t
 from fall_of_penghu.shell.settings import Settings
 from fall_of_penghu.shell.theme import button, fonts, frame, panel
 from fall_of_penghu.world.clock import CALENDAR_DAY_S
@@ -20,7 +21,7 @@ DOCK_LINES = 5
 FREE_LINES = 12
 HISTORY = 80
 SLIDE_S = 0.28
-BTN_W = 40
+BTN_W = 46
 MAX_ICONS = 3
 
 _ICON_FACTION = {
@@ -189,7 +190,7 @@ class ChatLog:
         box = self.panel_rect(screen_w, screen_h, bottom_inset)
         surf = panel((box.w, box.h), 180)
         frame(surf, ink, 70)
-        title = self._font.render("CONTACTS", True, ink)
+        title = self._font.render(t("chat.contacts"), True, ink)
         surf.blit(title, (8, (TOOL_H - title.get_height()) // 2))
         self._hits = {}
         bx = box.w - 8 - BTN_W
@@ -198,7 +199,7 @@ class ChatLog:
         button(
             surf,
             set_local,
-            "SET",
+            t("chat.set"),
             self._font,
             ink,
             hover=self._hits["settings"].collidepoint(mouse),
@@ -209,7 +210,7 @@ class ChatLog:
         button(
             surf,
             fmt_local,
-            "WIN" if cfg.chat_docked else "DOCK",
+            t("chat.win") if cfg.chat_docked else t("chat.dock"),
             self._font,
             ink,
             selected=not cfg.chat_docked,

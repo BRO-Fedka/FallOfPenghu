@@ -7,11 +7,13 @@ import pygame
 
 from fall_of_penghu.profile import prof
 from fall_of_penghu.render.display import open_display
-from fall_of_penghu.shell.audio import Audio
+from fall_of_penghu.shell.audio import Audio, click, play
 from fall_of_penghu.shell.help import HelpBook
 from fall_of_penghu.shell.match import MAP_DIR, Match
+from fall_of_penghu.shell.i18n import set_language
 from fall_of_penghu.shell.panels import (
     ChatSettingsSheet,
+    LanguageSheet,
     LoadSheet,
     MenuSheet,
     ModalScrim,
@@ -21,6 +23,7 @@ from fall_of_penghu.shell.panels import (
 )
 from fall_of_penghu.world.victory import held_label
 from fall_of_penghu.shell.saves import (
+    alloc_slot_id,
     find_slot,
     latest_slot,
     list_slots,
@@ -45,6 +48,7 @@ class Host:
         pygame.init()
         pygame.display.set_caption("Fall of Penghu")
         self.cfg = load_settings()
+        set_language(self.cfg.language)
         self.audio = Audio()
         self.audio.apply(self.cfg)
         force = self.cfg.renderer
@@ -59,6 +63,7 @@ class Host:
         self.overlay_back = "menu"
         self.match: Match | None = None
         self.pending_load: str | None = None
+        self.play_slot: str | None = None
         self.briefing: TypeIntro | None = None
         self._load_gen = 0
         self._load_result = None
@@ -68,13 +73,13 @@ class Host:
         self.pause = PauseSheet()
         self.surrender = SurrenderSheet()
         self.settings = SettingsSheet(self.cfg)
+        self.language = LanguageSheet(self.cfg)
         self.chat_settings = ChatSettingsSheet(self.cfg)
         self.help = HelpBook()
         self.load = LoadSheet()
         self.scrim = ModalScrim()
         self.boot = ImageIntro()
         self.theater = MenuTheater()
-        self.audio.play_menu(self.cfg)
 
     def run(self) -> None:
         clock = pygame.time.Clock()
@@ -90,8 +95,7 @@ class Host:
             if self.state == "boot":
                 self.boot.update(dt_wall)
                 if self.boot.finished:
-                    self.theater.reset()
-                    self.state = "menu"
+                    self._enter_menu()
             if self.state == "menu":
                 self.theater.update(dt_wall)
             elif self.state == "briefing" and self.briefing is not None:
@@ -107,7 +111,7 @@ class Host:
                 prof.end_frame()
             self._present()
         if self.match is not None:
-            self._save_match("autosave")
+            self._save_match()
             self.match.close()
         save_settings(self.cfg)
         pygame.quit()
@@ -141,19 +145,22 @@ class Host:
             if self.overlay != "surrender":
                 self._open_overlay("help")
             return
-        if self.overlay in ("help", "settings", "load", "chat"):
+        if self.overlay in ("help", "settings", "load", "chat", "language"):
             if self.scrim.handle_event(event):
+                click(event)
                 self._escape()
                 return
             form = self._overlay_form(screen_w, screen_h)
             if form is not None and self.scrim.blocks(event, form):
                 return
         if self.overlay == "help":
-            self.help.handle_event(event, screen_w, screen_h)
+            if self.help.handle_event(event, screen_w, screen_h):
+                click(event)
             return
         if self.overlay == "settings":
             was_full = self.cfg.fullscreen
             if self.settings.handle_event(event):
+                click(event)
                 save_settings(self.cfg)
                 self.audio.apply(self.cfg)
                 if self.cfg.fullscreen != was_full:
@@ -167,15 +174,26 @@ class Host:
             return
         if self.overlay == "chat":
             if self.chat_settings.handle_event(event):
+                click(event)
                 save_settings(self.cfg)
+            return
+        if self.overlay == "language":
+            if self.language.handle_event(event):
+                click(event)
+                save_settings(self.cfg)
+                self.help.reload()
+                self._refresh_ui_fonts()
             return
         if self.overlay == "load":
             slot_id = self.load.handle_event(event)
             if slot_id:
+                click(event)
                 self._request_load(slot_id)
             return
         if self.overlay == "surrender":
             action = self.surrender.handle_event(event)
+            if action:
+                click(event)
             if action == "observe":
                 self._observe_after_defeat()
             elif action == "quit":
@@ -183,6 +201,8 @@ class Host:
             return
         if self.overlay == "pause":
             action = self.pause.handle_event(event)
+            if action:
+                click(event)
             if action == "resume":
                 self._resume_match()
             elif action == "save":
@@ -196,6 +216,8 @@ class Host:
             return
         if self.state == "menu":
             action = self.menu.handle_event(event)
+            if action:
+                click(event)
             if action == "new":
                 self._request_new()
             elif action == "continue":
@@ -208,6 +230,8 @@ class Host:
                 self._open_overlay("settings")
             elif action == "help":
                 self._open_overlay("help")
+            elif action == "language":
+                self._open_overlay("language")
             elif action == "quit":
                 self.quit = True
             return
@@ -228,15 +252,14 @@ class Host:
 
     def _escape(self) -> None:
         if self.state == "boot":
-            self.theater.reset()
-            self.state = "menu"
+            self._enter_menu()
             return
         if self.state == "briefing":
             self._cancel_briefing()
             return
         if self.overlay == "surrender":
             return
-        if self.overlay in ("help", "settings", "load", "chat"):
+        if self.overlay in ("help", "settings", "load", "chat", "language"):
             back = self.overlay_back
             self.overlay = None
             if back == "pause":
@@ -264,6 +287,8 @@ class Host:
                 if self.state == "match"
                 else "menu"
             )
+        if name != self.overlay:
+            play("appearance")
         if name == "help":
             self.help.open()
         if self.state == "match" and self.match is not None:
@@ -278,6 +303,7 @@ class Host:
         self.match.hold()
         self.overlay = "surrender"
         self.overlay_back = "match"
+        play("failure")
 
     def _observe_after_defeat(self) -> None:
         if self.match is not None:
@@ -292,6 +318,7 @@ class Host:
         self.match.hold()
         self.overlay = "pause"
         self.overlay_back = "match"
+        play("appearance")
 
     def _resume_match(self) -> None:
         self.overlay = None
@@ -313,6 +340,7 @@ class Host:
             ago = slot_ago(slot_id)
         self.briefing = TypeIntro(briefing_lines(ago=ago))
         self.state = "briefing"
+        self.audio.fade_out()
         self._kick_load(slot_id)
 
     def _kick_load(self, slot_id: str | None) -> None:
@@ -359,8 +387,11 @@ class Host:
             self._cancel_briefing()
             return
         if self.pending_load is not None:
+            self.play_slot = self.pending_load
             self.cfg.last_slot = self.pending_load
             save_settings(self.cfg)
+        else:
+            self.play_slot = None
         self.pending_load = None
         self.state = "match"
         self.overlay = None
@@ -374,9 +405,7 @@ class Host:
         self.pending_load = None
         self.overlay = None
         self.overlay_back = "menu"
-        self.state = "menu"
-        self.theater.reset()
-        self.audio.play_menu(self.cfg)
+        self._enter_menu()
 
     def _continue_slot(self):
         if self.cfg.last_slot:
@@ -388,26 +417,31 @@ class Host:
     def _save_match(self, slot_id: str | None = None) -> None:
         if self.match is None:
             return
-        sid = slot_id or self.cfg.last_slot or "autosave"
+        sid = slot_id or self.play_slot or alloc_slot_id()
         try:
             meta = write_slot(dump_match(self.match), slot_id=sid)
         except Exception as exc:
             print(f"Save failed: {exc}", flush=True)
             return
+        self.play_slot = meta.id
         self.cfg.last_slot = meta.id
         save_settings(self.cfg)
         print(f"Saved {meta.id}  {meta.label}", flush=True)
 
-    def _to_menu(self) -> None:
-        if self.match is not None:
-            self._save_match("autosave")
-            self.match.close()
-        self.match = None
+    def _enter_menu(self) -> None:
+        self.state = "menu"
         self.overlay = None
         self.overlay_back = "menu"
-        self.state = "menu"
         self.theater.reset()
         self.audio.play_menu(self.cfg)
+
+    def _to_menu(self) -> None:
+        if self.match is not None:
+            self._save_match()
+            self.match.close()
+        self.match = None
+        self.play_slot = None
+        self._enter_menu()
 
     def _resize(self, w: int, h: int) -> None:
         self.display.resize(w, h)
@@ -480,6 +514,11 @@ class Host:
             self._modal_back(view, form, screen_w, screen_h, mouse, tod)
             self.chat_settings.draw(view, screen_w, screen_h, mouse, tod)
             self._modal_close(view, form, screen_w, screen_h, mouse, tod)
+        elif self.overlay == "language":
+            form = self.language.form_rect(screen_w, screen_h)
+            self._modal_back(view, form, screen_w, screen_h, mouse, tod)
+            self.language.draw(view, screen_w, screen_h, mouse, tod)
+            self._modal_close(view, form, screen_w, screen_h, mouse, tod)
 
     def _modal_back(
         self,
@@ -507,6 +546,8 @@ class Host:
             return self.load.form_rect(screen_w, screen_h)
         if self.overlay == "chat":
             return self.chat_settings.form_rect(screen_w, screen_h)
+        if self.overlay == "language":
+            return self.language.form_rect(screen_w, screen_h)
         return None
 
     def _modal_close(
@@ -519,6 +560,22 @@ class Host:
         tod: float,
     ) -> None:
         self.scrim.draw_close(view, form, screen_w, screen_h, mouse, tod)
+
+    def _refresh_ui_fonts(self) -> None:
+        from fall_of_penghu.shell.theme import fonts
+
+        trio = fonts()
+        for obj in (
+            self.menu,
+            self.pause,
+            self.surrender,
+            self.settings,
+            self.language,
+            self.chat_settings,
+            self.help,
+            self.load,
+        ):
+            obj._title, obj._font, obj._small = trio
 
     def _present(self) -> None:
         self.display.present()

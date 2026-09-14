@@ -8,9 +8,10 @@ from pathlib import Path
 import pygame
 
 from fall_of_penghu.render.dynamic.icons import KIND_FOLDERS, IconStore, listed_kinds
+from fall_of_penghu.paths import resource_root
 from fall_of_penghu.world.entities.game_object import FACTION_CHINA, FACTION_PLAYER
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = resource_root()
 KEYS_DIR = ROOT / "assets" / "icons" / "keys"
 HUD_DIR = ROOT / "assets" / "icons" / "hud"
 

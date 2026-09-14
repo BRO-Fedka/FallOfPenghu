@@ -88,6 +88,8 @@ class ObjectManager:
 
     def discard(self, object_id: str) -> None:
         self._by_id.pop(object_id, None)
+        if self._transport is not None:
+            self._transport.on_halt(object_id)
 
     def populate(
         self,

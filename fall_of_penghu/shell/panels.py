@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import pygame
 
+from fall_of_penghu.render.dynamic.hud_icons import HudIcons
 from fall_of_penghu.render.dynamic.icons import CHIP, IconStore
+from fall_of_penghu.shell.i18n import I18N_DIR, LANGS, NATIVE, language, set_language, t
 from fall_of_penghu.shell.settings import (
     AA_LABELS,
     AA_MODES,
@@ -13,13 +15,13 @@ from fall_of_penghu.shell.settings import (
 from fall_of_penghu.world.entities.game_object import FACTION_CHINA, FACTION_PLAYER
 from fall_of_penghu.world.notices import (
     CATEGORIES,
-    CATEGORY_HINTS,
-    CATEGORY_LABELS,
     CONTACT,
     KIND_FILTERS,
     SPEED_0X,
     SPEED_1X,
     SPEED_OFF,
+    category_hint,
+    category_label,
 )
 from fall_of_penghu.shell.saves import list_slots
 from fall_of_penghu.shell.theme import button, fonts, frame, ink_at, label, panel, slider
@@ -30,6 +32,8 @@ WARN = (196, 72, 64)
 BTN_H = 32
 CLOSE_W = 28
 MENU_VEIL_A = 64
+GLOBE = 32
+GLOBE_ICON = 20
 
 
 class ModalScrim:
@@ -95,10 +99,14 @@ class MenuSheet:
     def __init__(self) -> None:
         self._title, self._font, self._small = fonts()
         self._rects: dict[str, pygame.Rect] = {}
+        self._glyphs = HudIcons()
+        self._globe = pygame.Rect(0, 0, GLOBE, GLOBE)
 
     def handle_event(self, event: pygame.event.Event) -> str | None:
         if event.type != pygame.MOUSEBUTTONDOWN or event.button != 1:
             return None
+        if self._globe.collidepoint(event.pos):
+            return "language"
         for key, rect in self._rects.items():
             if rect.collidepoint(event.pos):
                 return key
@@ -120,15 +128,28 @@ class MenuSheet:
         sheet = panel((320, 360), 200)
         frame(sheet, ink, 70)
         label(sheet, "FALL OF PENGHU", self._title, ink, (16, 16))
-        sub = self._small.render("There will be no help", True, ink)
+        sub = self._small.render(t("menu.tagline"), True, ink)
         sheet.blit(sub, (16, 46))
+        globe = pygame.Rect(sheet.get_width() - 12 - GLOBE, 12, GLOBE, GLOBE)
+        self._globe = globe.move(x, y)
+        hover = self._globe.collidepoint(mouse)
+        button(sheet, globe, "", self._font, ink, hover=hover)
+        icon = self._glyphs.get("globe", GLOBE_ICON)
+        if icon is not None:
+            sheet.blit(
+                icon,
+                (
+                    globe.x + (GLOBE - icon.get_width()) // 2,
+                    globe.y + (GLOBE - icon.get_height()) // 2,
+                ),
+            )
         keys = (
-            ("continue", "Continue", not can_continue),
-            ("new", "New Game", False),
-            ("load", "Load game", False),
-            ("settings", "Settings", False),
-            ("help", "Field manual", False),
-            ("quit", "Quit", False),
+            ("continue", t("menu.continue"), not can_continue),
+            ("new", t("menu.new"), False),
+            ("load", t("menu.load"), False),
+            ("settings", t("menu.settings"), False),
+            ("help", t("menu.help"), False),
+            ("quit", t("menu.quit"), False),
         )
         self._rects = {}
         by = 80
@@ -177,13 +198,13 @@ class PauseSheet:
         y = (screen_h - h) // 2
         sheet = panel((w, h), 220)
         frame(sheet, ink, 80)
-        label(sheet, "PAUSED", self._title, ink, (16, 14))
+        label(sheet, t("pause.title"), self._title, ink, (16, 14))
         keys = (
-            ("resume", "Resume", False),
-            ("save", "Save", False),
-            ("settings", "Settings", False),
-            ("help", "Field manual", False),
-            ("menu", "To menu", False),
+            ("resume", t("pause.resume"), False),
+            ("save", t("pause.save"), False),
+            ("settings", t("pause.settings"), False),
+            ("help", t("pause.help"), False),
+            ("menu", t("pause.menu"), False),
         )
         self._rects = {}
         by = 56
@@ -244,30 +265,32 @@ class SurrenderSheet:
         y = (screen_h - h) // 2
         sheet = panel((w, h), 230)
         frame(sheet, ink, 80)
-        label(sheet, "SURRENDER", self._title, ink, (16, 14))
-        sub = self._font.render("The archipelago is lost.", True, ink)
+        label(sheet, t("surrender.title"), self._title, ink, (16, 14))
+        sub = self._font.render(t("surrender.lost"), True, ink)
         sheet.blit(sub, (16, 48))
-        held_l = self._small.render("Held for", True, ink)
+        held_l = self._small.render(t("surrender.held"), True, ink)
         held_v = self._font.render(held, True, ink)
         sheet.blit(held_l, (16, 88))
         sheet.blit(held_v, (16, 106))
         total = kill_total(kills)
         kill_l = self._small.render(
-            "Destroyed" if total == 0 else f"Destroyed  ·  {total}",
+            t("surrender.destroyed")
+            if total == 0
+            else f"{t('surrender.destroyed')}  ·  {total}",
             True,
             ink,
         )
         sheet.blit(kill_l, (16, 140))
         self._blit_kills(sheet, chips, 16, 160, inner)
-        rank_l = self._small.render("Global rank", True, ink)
+        rank_l = self._small.render(t("surrender.rank"), True, ink)
         rank_v = self._font.render("—", True, ink)
-        rank_note = self._small.render("leaderboard coming later", True, ink)
+        rank_note = self._small.render(t("surrender.rank_note"), True, ink)
         sheet.blit(rank_l, (16, rank_y))
         sheet.blit(rank_v, (16, rank_y + 18))
         sheet.blit(rank_note, (16, rank_y + 40))
         keys = (
-            ("observe", "Observe the world"),
-            ("quit", "To menu"),
+            ("observe", t("surrender.observe")),
+            ("quit", t("surrender.menu")),
         )
         self._rects = {}
         for key, caption in keys:
@@ -291,7 +314,7 @@ class SurrenderSheet:
     ) -> list[tuple[pygame.Surface | None, pygame.Surface, int]]:
         rows = ordered_kills(kills)
         if not rows:
-            none = self._font.render("none", True, ink)
+            none = self._font.render(t("surrender.none"), True, ink)
             return [(None, none, none.get_width())]
         out: list[tuple[pygame.Surface | None, pygame.Surface, int]] = []
         for kind, n in rows:
@@ -397,18 +420,18 @@ class SettingsSheet:
         y = (screen_h - h) // 2
         sheet = panel((w, h), 220)
         frame(sheet, ink, 80)
-        label(sheet, "SETTINGS", self._title, ink, (16, 14))
-        note = self._small.render("Esc back", True, ink)
+        label(sheet, t("settings.title"), self._title, ink, (16, 14))
+        note = self._small.render(t("esc_back"), True, ink)
         sheet.blit(note, (16, 46))
         self._hits = []
         self._sliders = {}
         row = 80
         row = self._check(
-            sheet, x, y, mouse, ink, row, "fullscreen", "Fullscreen", self.cfg.fullscreen
+            sheet, x, y, mouse, ink, row, "fullscreen", t("settings.fullscreen"), self.cfg.fullscreen
         )
-        label(sheet, "Clock", self._font, ink, (16, row + 4))
+        label(sheet, t("settings.clock"), self._font, ink, (16, row + 4))
         cx = 160
-        for twelve, caption in ((False, "24-hour"), (True, "12-hour")):
+        for twelve, caption in ((False, t("settings.clock_24")), (True, t("settings.clock_12"))):
             rect = pygame.Rect(cx, row, 100, 28)
             self._hits.append((rect.move(x, y), "clock", twelve))
             button(
@@ -422,7 +445,7 @@ class SettingsSheet:
             )
             cx += 108
         row += 44
-        label(sheet, "Renderer", self._font, ink, (16, row + 4))
+        label(sheet, t("settings.renderer"), self._font, ink, (16, row + 4))
         rx = 160
         for name in RENDERERS:
             rect = pygame.Rect(rx, row, 88, 28)
@@ -439,13 +462,11 @@ class SettingsSheet:
             rx += 96
         row += 44
         if self.cfg.renderer != self._applied_renderer:
-            warn = self._small.render(
-                "Restart the game to apply the renderer change.", True, WARN
-            )
+            warn = self._small.render(t("settings.restart"), True, WARN)
             sheet.blit(warn, (16, row))
             row += 28
         if self.cfg.renderer == "gl":
-            label(sheet, "Graphics", self._font, ink, (16, row + 4))
+            label(sheet, t("settings.graphics"), self._font, ink, (16, row + 4))
             row += 32
             row = self._check(
                 sheet,
@@ -455,10 +476,10 @@ class SettingsSheet:
                 ink,
                 row,
                 "simple_shaders",
-                "Simplified shaders",
+                t("settings.simple"),
                 self.cfg.simple_shaders,
             )
-            label(sheet, "Anti-alias", self._font, ink, (16, row + 4))
+            label(sheet, t("settings.aa"), self._font, ink, (16, row + 4))
             ax = 140
             for name in AA_MODES:
                 rect = pygame.Rect(ax, row, 72, 28)
@@ -475,9 +496,9 @@ class SettingsSheet:
                 ax += 80
             row += 44
         for field, caption in (
-            ("master", "Master"),
-            ("music", "Music"),
-            ("sfx", "Effects"),
+            ("master", t("settings.master")),
+            ("music", t("settings.music")),
+            ("sfx", t("settings.sfx")),
         ):
             row = self._vol(sheet, x, y, mouse, ink, w, row, field, caption)
         target.overlay(sheet, (x, y))
@@ -518,7 +539,7 @@ class SettingsSheet:
         button(
             sheet,
             rect,
-            f"{caption}  {'ON' if on else 'OFF'}",
+            f"{caption}  {t('on') if on else t('off')}",
             self._small,
             ink,
             selected=on,
@@ -599,12 +620,8 @@ class ChatSettingsSheet:
         form = self.form_rect(screen_w, screen_h)
         sheet = panel((form.w, form.h), 220)
         frame(sheet, ink, 80)
-        label(sheet, "CHAT SETTINGS", self._title, ink, (16, 14))
-        note = self._small.render(
-            "Esc back  ·  CHAT hides the line  ·  1x / 0x set match speed",
-            True,
-            ink,
-        )
+        label(sheet, t("chat.title"), self._title, ink, (16, 14))
+        note = self._small.render(t("chat.hint"), True, ink)
         sheet.blit(note, (16, 46))
         self._hits = []
         inner = pygame.Surface((form.w, 1600), pygame.SRCALPHA)
@@ -633,28 +650,31 @@ class ChatSettingsSheet:
         category: str,
     ) -> int:
         ox, oy = form.x, form.y + 72 - self._scroll
-        label(sheet, CATEGORY_LABELS[category], self._font, ink, (16, row + 4))
+        label(sheet, category_label(category), self._font, ink, (16, row + 4))
         show_on = self.cfg.chat_show.get(category, True)
-        show = pygame.Rect(form.w - 100, row, 84, 28)
+        cap = t("chat.show_on") if show_on else t("chat.show_off")
+        bw = max(84, self._small.size(cap)[0] + 16)
+        show = pygame.Rect(form.w - 16 - bw, row, bw, 28)
         self._hits.append((show.move(ox, oy), "show", category, None))
         button(
             sheet,
             show,
-            "CHAT ON" if show_on else "CHAT OFF",
+            cap,
             self._small,
             ink,
             selected=show_on,
             hover=show.move(ox, oy).collidepoint(mouse),
         )
         row += 32
-        hint = self._small.render(CATEGORY_HINTS[category], True, ink)
+        hint = self._small.render(category_hint(category), True, ink)
         sheet.blit(hint, (16, row))
         row += 24
-        label(sheet, "Speed", self._small, ink, (16, row + 6))
+        speed_cap = t("chat.speed")
+        label(sheet, speed_cap, self._small, ink, (16, row + 6))
         mode = str(self.cfg.chat_slow.get(category) or SPEED_OFF)
-        sx = 80
+        sx = 16 + self._small.size(speed_cap)[0] + 10
         for value, caption in (
-            (SPEED_OFF, "OFF"),
+            (SPEED_OFF, t("off")),
             (SPEED_1X, "1x"),
             (SPEED_0X, "0x"),
         ):
@@ -709,8 +729,16 @@ class LoadSheet:
         self._title, self._font, self._small = fonts()
         self._box = pygame.Rect(0, 0, 1, 1)
         self._hits: list[tuple[pygame.Rect, str]] = []
+        self._scroll = 0
+        self._scroll_max = 0
 
     def handle_event(self, event: pygame.event.Event) -> str | None:
+        if event.type == pygame.MOUSEWHEEL:
+            if self._box.collidepoint(pygame.mouse.get_pos()):
+                self._scroll = min(
+                    self._scroll_max, max(0, self._scroll - event.y)
+                )
+            return None
         if event.type != pygame.MOUSEBUTTONDOWN or event.button != 1:
             return None
         for rect, slot_id in self._hits:
@@ -731,21 +759,25 @@ class LoadSheet:
         self._box = pygame.Rect((screen_w - w) // 2, (screen_h - h) // 2, w, h)
         sheet = panel((w, h), 220)
         frame(sheet, ink, 80)
-        label(sheet, "LOAD THEATER", self._title, ink, (16, 14))
+        label(sheet, t("load.title"), self._title, ink, (16, 14))
         slots = list_slots()
         self._hits = []
         if not slots:
-            empty = self._font.render("No saved worlds yet.", True, ink)
+            self._scroll = 0
+            self._scroll_max = 0
+            empty = self._font.render(t("load.empty"), True, ink)
             sheet.blit(empty, (16, 80))
-            hint = self._small.render(
-                "Save from pause, or leave a match to the menu.", True, ink
-            )
+            hint = self._small.render(t("load.hint"), True, ink)
             sheet.blit(hint, (16, 112))
         else:
-            note = self._small.render("Esc back", True, ink)
+            note = self._small.render(t("esc_back"), True, ink)
             sheet.blit(note, (16, 46))
-            y = 72
-            for slot in slots[:8]:
+            y0 = 72
+            rows = max(1, (h - y0 - 16) // 40)
+            self._scroll_max = max(0, len(slots) - rows)
+            self._scroll = min(self._scroll, self._scroll_max)
+            y = y0
+            for slot in slots[self._scroll : self._scroll + rows]:
                 local = pygame.Rect(16, y, w - 32, BTN_H)
                 self._hits.append((local.move(self._box.x, self._box.y), slot.id))
                 button(
@@ -762,6 +794,78 @@ class LoadSheet:
     def form_rect(self, screen_w: int, screen_h: int) -> pygame.Rect:
         w, h = min(520, screen_w - 48), min(420, screen_h - 48)
         return pygame.Rect((screen_w - w) // 2, (screen_h - h) // 2, w, h)
+
+
+class LanguageSheet:
+    """Pick UI language. Same chrome as Settings."""
+
+    def __init__(self, cfg: Settings) -> None:
+        self.cfg = cfg
+        self._title, self._font, self._small = fonts()
+        self._cjk: pygame.font.Font | None = None
+        self._hits: list[tuple[pygame.Rect, str]] = []
+
+    def handle_event(self, event: pygame.event.Event) -> bool:
+        if event.type != pygame.MOUSEBUTTONDOWN or event.button != 1:
+            return False
+        for rect, code in self._hits:
+            if not rect.collidepoint(event.pos):
+                continue
+            self.cfg.language = set_language(code)
+            return True
+        return False
+
+    def draw(
+        self,
+        target,
+        screen_w: int,
+        screen_h: int,
+        mouse: tuple[int, int],
+        tod: float = 0.5,
+    ) -> None:
+        ink = ink_at(tod)
+        form = self.form_rect(screen_w, screen_h)
+        sheet = panel((form.w, form.h), 220)
+        frame(sheet, ink, 80)
+        label(sheet, t("language.title"), self._title, ink, (16, 14))
+        note = self._small.render(t("language.hint"), True, ink)
+        sheet.blit(note, (16, 46))
+        self._hits = []
+        y = 80
+        current = language()
+        for code in LANGS:
+            name = NATIVE[code]
+            local = pygame.Rect(16, y, form.w - 32, BTN_H)
+            ready = (I18N_DIR / f"{code}.json").is_file()
+            if ready:
+                self._hits.append((local.move(form.x, form.y), code))
+            button(
+                sheet,
+                local,
+                name,
+                self._name_font(name),
+                ink,
+                selected=code == current,
+                disabled=not ready,
+                hover=ready and local.move(form.x, form.y).collidepoint(mouse),
+            )
+            y += 40
+        target.overlay(sheet, (form.x, form.y))
+
+    def form_rect(self, screen_w: int, screen_h: int) -> pygame.Rect:
+        h = 80 + 40 * len(LANGS) + 16
+        w = min(420, screen_w - 48)
+        h = min(h, screen_h - 48)
+        return pygame.Rect((screen_w - w) // 2, (screen_h - h) // 2, w, h)
+
+    def _name_font(self, sample: str) -> pygame.font.Font:
+        if not any(ord(ch) > 0x2E80 for ch in sample):
+            return self._font
+        if self._cjk is None:
+            self._cjk = pygame.font.SysFont(
+                "microsoftyahei,msyh,yugothic,msgothic,simsun,arial", 16
+            )
+        return self._cjk
 
 
 class SplashStub:

@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import pygame
 
+from fall_of_penghu.shell.i18n import t
+from fall_of_penghu.shell.theme import ui_font
+
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
 
@@ -20,15 +23,10 @@ INITIAL_DELAY = 0.5
 SKIP_SPEED = 2.0
 TYPE_CPS = 28.0
 
-WAR = "China has declared war on Taiwan."
-COMMAND = "You command the defense of the Penghu archipelago."
-FALL = "There will be no help, this is the story of your fall."
-BEGIN = "Click to begin"
-
-
 def briefing_lines(*, ago: str | None = None) -> list[str]:
-    first = f"{ago}\n\n{WAR}" if ago else WAR
-    return [first, COMMAND, FALL, BEGIN]
+    war = t("brief.war")
+    first = t("brief.ago_wrap", ago=ago, war=war) if ago else war
+    return [first, t("brief.command"), t("brief.fall"), t("brief.begin")]
 
 
 class ImageIntro:
@@ -103,7 +101,7 @@ class TypeIntro:
         self.timer = -INITIAL_DELAY
         self.speed = 1.0
         self.finished = False
-        self._font = pygame.font.SysFont("consolas", 22)
+        self._font = ui_font(22)
         self._bg: pygame.Surface | None = None
 
     def reset(self, lines: list[str] | None = None) -> None:

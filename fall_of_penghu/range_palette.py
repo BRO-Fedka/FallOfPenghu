@@ -3,6 +3,9 @@ from __future__ import annotations
 import pygame
 
 from fall_of_penghu.range import RANGE_DEFAULT_ON, RANGE_RINGS
+from fall_of_penghu.shell.i18n import t
+from fall_of_penghu.shell.theme import ui_font
+from fall_of_penghu.world.entities.kinds import kind_label
 
 PANEL_H = 40
 PAD = 6
@@ -20,7 +23,7 @@ class RangePalette:
         self.y = PANEL_H + 12
         self.enabled: set[str] = set(RANGE_DEFAULT_ON)
         self._saved: set[str] = set(RANGE_DEFAULT_ON)
-        self._font = pygame.font.SysFont("consolas", 13)
+        self._font = ui_font(13)
         self._panel = pygame.Rect(0, 0, 1, 1)
         self._title = pygame.Rect(0, 0, 1, 1)
         self._rows: list[tuple[pygame.Rect, str]] = []
@@ -82,22 +85,21 @@ class RangePalette:
         surf = pygame.Surface((self._panel.w, self._panel.h), pygame.SRCALPHA)
         surf.fill((8, 10, 12, 200))
         pygame.draw.rect(surf, (*ink, 80), surf.get_rect(), 1)
-        title = self._font.render("RANGE", True, ink)
+        title = self._font.render(t("panel.range"), True, ink)
         surf.blit(title, (PAD, (TITLE_H - title.get_height()) // 2))
         key = self._font.render("G", True, ink)
         surf.blit(
             key,
             (self._width - PAD - key.get_width(), (TITLE_H - key.get_height()) // 2),
         )
-        hint = self._font.render("toggle with G", True, ink)
+        hint = self._font.render(t("panel.range_hint"), True, ink)
         hint.set_alpha(170)
         surf.blit(hint, (PAD, TITLE_H + (HINT_H - hint.get_height()) // 2))
         for rect, kind in self._rows:
             local = pygame.Rect(rect.x - self.x, rect.y - self.y, CHECK, CHECK)
             on = kind in self.enabled
-            color, label = next(
-                (item[1], item[2]) for item in RANGE_RINGS if item[0] == kind
-            )
+            color = next(item[1] for item in RANGE_RINGS if item[0] == kind)
+            label = kind_label(kind)
             pygame.draw.rect(surf, (*color[:3], 200), local, 1)
             if on:
                 inner = local.inflate(-4, -4)

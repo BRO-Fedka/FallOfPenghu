@@ -136,7 +136,7 @@
       "reload_sim_s": 40.0
     },
     "aa_pickup": {
-      "engagement_m": 2000.0,
+      "engagement_m": 1333.3,
       "doctrine": "fire",
       "ammo": "tracer",
       "damage": 25.0,
@@ -144,8 +144,9 @@
       "cooldown_sim_s": 0.35,
       "max_in_flight": 6,
       "engage_mobility": ["air", "land"],
+      "ammo_mobility": ["air"],
       "clip": 20,
-      "reserve": 60,
+      "reserve": 180,
       "reload_sim_s": 10.0
     },
     "infantry": {
@@ -161,7 +162,7 @@
       "life_sim_s": 10.0
     },
     "tank": {
-      "engagement_m": 3000.0,
+      "engagement_m": 1800.0,
       "doctrine": "fire",
       "ammo": "cannon",
       "damage": 90.0,
@@ -169,6 +170,7 @@
       "cooldown_sim_s": 2.5,
       "max_in_flight": 1,
       "engage_mobility": ["land"],
+      "engage_exclude": ["infantry"],
       "speed_mps": 380.0,
       "life_sim_s": 12.0
     },
@@ -188,7 +190,7 @@
       "scatter_min_m": 20.0,
       "scatter_max_m": 250.0,
       "clip": 8,
-      "reserve": 24,
+      "reserve": 292,
       "reload_sim_s": 60.0
     },
     "intercept": {
@@ -309,8 +311,8 @@
       "drone_carrier": { "speed_mps": 8 },
       "ferry": { "speed_mps": 7.0 },
       "landing_ship": { "speed_mps": 6.0 },
-      "infantry": { "speed_mps": 4.0 },
-      "artillery": { "speed_mps": 1.0 },
+      "infantry": { "speed_mps": 10.0 },
+      "artillery": { "speed_mps": 12.5 },
       "tank": { "speed_mps": 10.0 },
       "aaw": { "speed_mps": 16.0 },
       "aa_pickup": { "speed_mps": 25.0 },
@@ -340,19 +342,28 @@
       "default": 1.0
     },
     "tank": {
-      "tank": 12.0,
-      "artillery": 11.0,
-      "aa_pickup": 7.0,
-      "infantry": 4.0,
+      "aa_pickup": 12.0,
+      "tank": 10.0,
+      "artillery": 9.0,
       "aaw": 3.0,
       "truck": 2.0
     },
     "infantry": {
-      "infantry": 8.0,
-      "tank": 10.0,
+      "tank": 12.0,
+      "infantry": 7.0,
+      "artillery": 5.0,
+      "aa_pickup": 4.0,
+      "truck": 3.0
+    },
+    "aa_pickup": {
+      "infantry": 12.0,
+      "drone": 11.0,
+      "scout": 10.0,
       "aa_pickup": 6.0,
       "artillery": 5.0,
-      "truck": 3.0
+      "aaw": 5.0,
+      "tank": 4.0,
+      "truck": 2.0
     },
     "artillery": {
       "landing_ship": 11.0,
@@ -375,7 +386,7 @@
     "scout_standoff_m": 400.0,
     "scout_reassign_sim_s": 180.0,
     "scout_count": 6,
-    "scout_per_day": 4,
+    "scout_per_day": 1,
     "scout_patrol_count": 2,
     "scout_dusk_tod": 0.7083,
     "drone_lost_sim_s": 90.0,

@@ -4,11 +4,12 @@ import json
 from pathlib import Path
 from typing import Any
 
+from fall_of_penghu.paths import package_dir
 from fall_of_penghu.world.entities.game_object import GameObject
 from fall_of_penghu.world.entities.kinds import SHOT_KINDS, is_static_kind
 
 DATA_NAME = "detection.json"
-PACKAGE_DATA = Path(__file__).resolve().parents[2] / "data" / DATA_NAME
+PACKAGE_DATA = package_dir() / "data" / DATA_NAME
 
 CHANNELS = ("radar", "visual_primitive", "visual_advanced", "satellite", "lookout")
 
@@ -64,7 +65,7 @@ class DetectionCatalog:
         self.scout_standoff_m = float(heat.get("scout_standoff_m") or 400.0)
         self.scout_reassign_sim_s = float(heat.get("scout_reassign_sim_s") or 180.0)
         self.scout_count = max(1, int(heat.get("scout_count") or 6))
-        self.scout_per_day = max(0, int(heat.get("scout_per_day") or 4))
+        self.scout_per_day = max(0, int(heat.get("scout_per_day") or 1))
         self.scout_patrol_count = max(0, int(heat.get("scout_patrol_count") or 2))
         self.scout_dusk_tod = float(heat.get("scout_dusk_tod") or (17.0 / 24.0))
         self.drone_lost_sim_s = float(heat.get("drone_lost_sim_s") or 90.0)
@@ -103,7 +104,7 @@ class DetectionCatalog:
             return cls(json.load(fh))
 
     def scout_cap(self, day: int) -> int:
-        """Day 0 (opening noon) is six scouts; four more each calendar midnight."""
+        """Day 0 (opening noon) is six scouts; one more each calendar midnight."""
         return max(1, self.scout_count + self.scout_per_day * max(0, int(day)))
 
     def listed_kinds(self) -> tuple[str, ...]:
@@ -184,9 +185,13 @@ class DetectionCatalog:
         text = f"{clip}/{reserve}"
         if getattr(obj, "reloading", False):
             left = max(0.0, float(getattr(obj, "weapon_ready_sim", 0.0) or 0.0) - now)
-            return f"{text} RLD {left:.0f}s"
+            from fall_of_penghu.shell.i18n import t
+
+            return t("ammo.reloading", text=text, s=f"{left:.0f}")
         if clip <= 0 and reserve <= 0:
-            return f"{text} EMPTY"
+            from fall_of_penghu.shell.i18n import t
+
+            return t("ammo.empty", text=text)
         return text
 
     def max_in_flight(self, kind: str) -> int:
@@ -197,6 +202,31 @@ class DetectionCatalog:
         if raw is None:
             return None
         return frozenset(str(item) for item in raw)
+
+    def engage_exclude(self, kind: str) -> frozenset[str]:
+        raw = self.weapon(kind).get("engage_exclude") or ()
+        return frozenset(str(item) for item in raw)
+
+    def ammo_mobility(self, kind: str) -> frozenset[str] | None:
+        raw = self.weapon(kind).get("ammo_mobility")
+        if raw is None:
+            return None
+        return frozenset(str(item) for item in raw)
+
+    def shot_uses_ammo(self, shooter_kind: str, target: GameObject | None) -> bool:
+        if not self.limited_ammo(shooter_kind):
+            return False
+        allowed = self.ammo_mobility(shooter_kind)
+        if allowed is None or target is None:
+            return True
+        return self.target_mobility(target) in allowed
+
+    def ammo_blocks_shot(self, shooter: GameObject, target: GameObject) -> bool:
+        if not self.shot_uses_ammo(shooter.kind, target):
+            return False
+        if getattr(shooter, "reloading", False):
+            return True
+        return int(getattr(shooter, "clip", 0) or 0) <= 0
 
     def target_branch(self, kind: str) -> str:
         if is_static_kind(kind):
@@ -250,14 +280,19 @@ class DetectionCatalog:
 
     def engage_kinds_for(self, shooter_kind: str) -> frozenset[str]:
         allowed = self.engage_mobility(shooter_kind)
+        excluded = self.engage_exclude(shooter_kind)
         out: set[str] = set()
         for kind in self.target_kinds():
+            if kind in excluded:
+                continue
             mob = self.kind_mobility(kind)
             if allowed is None or mob in allowed:
                 out.add(kind)
         return frozenset(out)
 
     def can_engage(self, shooter_kind: str, target: GameObject) -> bool:
+        if target.kind in self.engage_exclude(shooter_kind):
+            return False
         allowed = self.engage_mobility(shooter_kind)
         if allowed is None:
             return True

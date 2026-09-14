@@ -47,6 +47,20 @@ AA_HOT = 0.75
 TERMINAL_M = 700.0
 
 
+class _Hunt:
+    """China's visible prey, rebuilt once per air step."""
+
+    __slots__ = ("seen_ids", "live", "prey", "imprints", "static", "darkness")
+
+    def __init__(self, seen_ids, live, prey, imprints, static, darkness) -> None:
+        self.seen_ids = seen_ids
+        self.live = live
+        self.prey = prey
+        self.imprints = imprints
+        self.static = static
+        self.darkness = darkness
+
+
 class AirOps:
     """Kamikaze swarm. Does not own scouts."""
 
@@ -120,16 +134,19 @@ class AirOps:
             and obj.kind == "drone"
         ]
         load = _load_by_target(drones)
+        hunt = _build_hunt(world, intel)
         with scope("air.steer"):
             self._drone_i = slice_round_robin(
                 drones,
                 self._drone_i,
-                lambda drone: self._steer(world, drone, intel, now, load),
+                lambda drone: self._steer(world, drone, intel, now, load, hunt),
             )
         with scope("air.launch"):
-            self._step_carriers(world, intel, now, load)
+            self._step_carriers(world, intel, now, load, hunt)
 
-    def _step_carriers(self, world: World, intel: IntelOps, now: float, load) -> None:
+    def _step_carriers(
+        self, world: World, intel: IntelOps, now: float, load, hunt: _Hunt
+    ) -> None:
         for carrier in list(_carriers(world)):
             n = _slot_from_id(carrier.id, 1)
             axis = approach_axis(world, n)
@@ -147,7 +164,9 @@ class AirOps:
                 continue
             launched = 0
             while launched < VOLLEY and carrier.magazine > 0:
-                target = self._pick_target(world, intel, load, (carrier.x, carrier.y))
+                target = self._pick_target(
+                    world, intel, load, (carrier.x, carrier.y), hunt
+                )
                 if target is None:
                     if launched == 0 and now >= float(
                         getattr(self, "_no_tgt_log", 0.0) or 0.0
@@ -174,9 +193,10 @@ class AirOps:
         intel: IntelOps,
         now: float,
         load: dict[str, int],
+        hunt: _Hunt,
     ) -> None:
-        assigned = _live_assigned(world, drone)
-        seen = _visible_prey(world, drone, load)
+        assigned = _live_assigned(world, drone, hunt.seen_ids)
+        seen = _visible_prey(world, drone, load, hunt)
         if seen is not None and _better_strike(drone, seen, assigned):
             old = drone.strike_id
             _bind(drone, seen, now)
@@ -203,7 +223,7 @@ class AirOps:
         remaining = drone.route.remaining_length() if drone.route is not None else 0.0
         if remaining > 60.0:
             return
-        nxt = self._pick_target(world, intel, load, (drone.x, drone.y))
+        nxt = self._pick_target(world, intel, load, (drone.x, drone.y), hunt)
         if nxt is None:
             return
         old = drone.strike_id
@@ -226,15 +246,15 @@ class AirOps:
         intel: IntelOps,
         load: dict[str, int],
         origin: tuple[float, float],
+        hunt: _Hunt,
     ):
-        live = _strike_live(world)
-        pick = _nearest_rank(live, origin, load)
+        pick = _nearest_rank(hunt.live, origin, load)
         if pick is not None:
             return pick
-        mark = _strike_imprint(world, load)
+        mark = _best_imprint(hunt.imprints, load, now=world.clock.simulation_time)
         if mark is not None:
             return mark
-        static = _nearest_static(world, intel)
+        static = hunt.static
         if static is None or load.get(static.id, 0) >= MAX_PER_TARGET:
             return None
         return static
@@ -381,7 +401,7 @@ def _load_by_target(drones: list[DynamicObject]) -> dict[str, int]:
     return load
 
 
-def _live_assigned(world: World, drone: DynamicObject):
+def _live_assigned(world: World, drone: DynamicObject, seen_ids: set[str]):
     sid = drone.strike_id
     if not sid:
         return None
@@ -392,8 +412,7 @@ def _live_assigned(world: World, drone: DynamicObject):
         return None
     if obj.kind == "bridge":
         return None
-    ids = {item.id for item in world.perception.visible_objects(FACTION_CHINA)}
-    if obj.id not in ids:
+    if obj.id not in seen_ids:
         return None
     if not world.catalog.can_engage("drone", obj):
         return None
@@ -455,25 +474,27 @@ def _better_strike(drone: DynamicObject, seen, assigned) -> bool:
     return closer < hypot(drone.x - assigned.x, drone.y - assigned.y)
 
 
-def _strike_live(world: World) -> list:
-    return [
-        obj
-        for obj in world.perception.visible_objects(FACTION_CHINA)
-        if obj.faction == FACTION_PLAYER
-        and obj.active
-        and obj.kind not in SHOT_KINDS
-        and obj.kind != "bridge"
-        and not is_static_kind(obj.kind)
-        and world.catalog.can_engage("drone", obj)
-        and not getattr(obj, "stowed", False)
-    ]
-
-
-def _strike_imprint(world: World, load: dict[str, int]):
+def _build_hunt(world: World, intel: IntelOps) -> _Hunt:
+    visible = world.perception.visible_objects(FACTION_CHINA)
+    catalog = world.catalog
+    seen_ids: set[str] = set()
+    live = []
+    prey = []
+    for obj in visible:
+        seen_ids.add(obj.id)
+        if obj.faction != FACTION_PLAYER or not obj.active:
+            continue
+        if getattr(obj, "stowed", False) or obj.kind in SHOT_KINDS:
+            continue
+        if obj.kind == "bridge":
+            continue
+        if not catalog.can_engage("drone", obj):
+            continue
+        prey.append(obj)
+        if not is_static_kind(obj.kind):
+            live.append(obj)
     now = world.clock.simulation_time
-    best = None
-    best_key = None
-    rank = {kind: i for i, kind in enumerate(STRIKE_FIRST)}
+    imprints = []
     for mark in world.perception.imprints(FACTION_CHINA):
         if mark.faction != FACTION_PLAYER or not mark.active:
             continue
@@ -481,6 +502,22 @@ def _strike_imprint(world: World, load: dict[str, int]):
             continue
         if mark.dead(now):
             continue
+        imprints.append(mark)
+    return _Hunt(
+        seen_ids,
+        live,
+        prey,
+        imprints,
+        _nearest_static(world, intel),
+        world.clock.darkness,
+    )
+
+
+def _best_imprint(imprints, load: dict[str, int], now: float):
+    best = None
+    best_key = None
+    rank = {kind: i for i, kind in enumerate(STRIKE_FIRST)}
+    for mark in imprints:
         if load.get(mark.source_id, 0) >= MAX_PER_TARGET:
             continue
         key = (rank.get(mark.kind, 50), mark.age(now))
@@ -490,22 +527,14 @@ def _strike_imprint(world: World, load: dict[str, int]):
     return best
 
 
-def _visible_prey(world: World, drone: DynamicObject, load: dict[str, int]):
+def _visible_prey(world: World, drone: DynamicObject, load: dict[str, int], hunt: _Hunt):
     catalog = world.catalog
     pool = []
-    for obj in world.perception.visible_objects(FACTION_CHINA):
-        if obj.faction != FACTION_PLAYER or not obj.active:
-            continue
-        if not catalog.can_engage("drone", obj):
-            continue
-        if getattr(obj, "stowed", False) or obj.kind in SHOT_KINDS:
-            continue
-        if obj.kind == "bridge":
-            continue
+    for obj in hunt.prey:
         radius = catalog.scaled_range_m(
             "visual_primitive",
             obj.kind,
-            world.clock.darkness,
+            hunt.darkness,
             emitter_kind="drone",
         )
         if radius is None or radius <= 0.0:

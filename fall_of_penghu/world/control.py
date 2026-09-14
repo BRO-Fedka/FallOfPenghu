@@ -143,10 +143,12 @@ def _announce(world: World, island: int, faction: str) -> None:
         box = planner.land.islands.bbox(island)
         x = (box[0] + box[2]) * 0.5
         y = (box[1] + box[3]) * 0.5
+    from fall_of_penghu.shell.i18n import t
+
     if faction == FACTION_CHINA:
-        text = "Island lost"
+        text = t("notice.island.lost")
     else:
-        text = "Island recaptured"
+        text = t("notice.island.retaken")
     post(world, THEATER, text, x, y)
 
 
@@ -160,7 +162,9 @@ def _landing(world: World, island: int) -> None:
         if obj.island_id() == island:
             x, y = obj.x, obj.y
             break
-    post(world, THEATER, "Enemy landing", x, y)
+    from fall_of_penghu.shell.i18n import t
+
+    post(world, THEATER, t("notice.landing"), x, y)
 
 
 def _island_xy(world: World, island: int) -> tuple[float, float]:

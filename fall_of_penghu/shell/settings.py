@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict, dataclass, field
-from pathlib import Path
 
+from fall_of_penghu.paths import user_root
 from fall_of_penghu.world.notices import (
     CATEGORIES,
     DEFAULT_SHOW,
@@ -15,7 +15,7 @@ from fall_of_penghu.world.notices import (
     default_kinds,
 )
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = user_root()
 SETTINGS_PATH = ROOT / "saves" / "settings.json"
 RENDERERS = ("gl", "software")
 RENDERER_LABELS = {"gl": "GPU", "software": "CPU"}
@@ -49,6 +49,7 @@ class Settings:
     simple_shaders: bool = False
     antialias: str = "msaa4"
     clock_12h: bool = False
+    language: str = "en"
     last_slot: str | None = None
     chat_docked: bool = True
     chat_x: int | None = None
@@ -56,6 +57,7 @@ class Settings:
     chat_show: dict[str, bool] = field(default_factory=lambda: dict(DEFAULT_SHOW))
     chat_slow: dict[str, str] = field(default_factory=lambda: dict(DEFAULT_SLOW))
     chat_kinds: dict[str, dict[str, bool]] = field(default_factory=_default_kinds)
+    chat_spotted_no_sat: bool = False
 
     def clamp(self) -> None:
         self.master = _vol(self.master)
@@ -71,10 +73,15 @@ class Settings:
             self.antialias = "msaa4"
         self.simple_shaders = bool(self.simple_shaders)
         self.clock_12h = bool(self.clock_12h)
+        from fall_of_penghu.shell.i18n import LANGS
+
+        if self.language not in LANGS:
+            self.language = "en"
         self.chat_docked = bool(self.chat_docked)
         self.chat_show = _merge_flags(self.chat_show, DEFAULT_SHOW)
         self.chat_slow = _merge_speed(self.chat_slow, DEFAULT_SLOW)
         self.chat_kinds = _merge_kinds(self.chat_kinds)
+        self.chat_spotted_no_sat = bool(self.chat_spotted_no_sat)
         if self.last_slot == "":
             self.last_slot = None
 
@@ -129,6 +136,7 @@ def load() -> Settings:
         simple_shaders=bool(data.get("simple_shaders", False)),
         antialias=str(data.get("antialias") or "msaa4"),
         clock_12h=bool(data.get("clock_12h", False)),
+        language=str(data.get("language") or "en"),
         last_slot=data.get("last_slot"),
         chat_docked=bool(data.get("chat_docked", True)),
         chat_x=data.get("chat_x"),
@@ -136,6 +144,7 @@ def load() -> Settings:
         chat_show=_merge_flags(data.get("chat_show"), DEFAULT_SHOW),
         chat_slow=_merge_speed(data.get("chat_slow"), DEFAULT_SLOW),
         chat_kinds=_merge_kinds(data.get("chat_kinds")),
+        chat_spotted_no_sat=bool(data.get("chat_spotted_no_sat", False)),
     )
     if cfg.chat_x is not None:
         cfg.chat_x = int(cfg.chat_x)

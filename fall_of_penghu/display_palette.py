@@ -3,6 +3,8 @@ from __future__ import annotations
 import pygame
 
 from fall_of_penghu.render.dynamic.icons import IconStore
+from fall_of_penghu.shell.i18n import t
+from fall_of_penghu.shell.theme import ui_font
 from fall_of_penghu.world.entities.game_object import FACTION_PLAYER
 from fall_of_penghu.world.entities.kinds import kind_label
 from fall_of_penghu.world.perception import DetectionCatalog
@@ -28,7 +30,7 @@ class DisplayPalette:
         self._kinds: dict[str, list[str]] = {name: [] for name in BRANCHES}
         self._open: dict[str, bool] = {name: False for name in BRANCHES}
         self._icons = IconStore()
-        self._font = pygame.font.SysFont("consolas", 13)
+        self._font = ui_font(13)
         self._panel = pygame.Rect(0, 0, 1, 1)
         self._title = pygame.Rect(0, 0, 1, 1)
         self._rows: list[tuple[pygame.Rect, str, str | None]] = []
@@ -100,7 +102,7 @@ class DisplayPalette:
         surf = pygame.Surface((self._panel.w, self._panel.h), pygame.SRCALPHA)
         surf.fill((8, 10, 12, 200))
         pygame.draw.rect(surf, (*ink, 80), surf.get_rect(), 1)
-        title = self._font.render("UNITS", True, ink)
+        title = self._font.render(t("panel.units"), True, ink)
         surf.blit(title, (PAD, (TITLE_H - title.get_height()) // 2))
         mx, my = mouse
         for rect, action, key in self._rows:
@@ -112,7 +114,9 @@ class DisplayPalette:
                 self._draw_twist(surf, local, ink, self._open.get(key, False))
             elif action == "branch" and key is not None:
                 self._draw_check(surf, local, ink, self._branch_state(key))
-                label = self._font.render(BRANCH_LABEL[key], True, ink)
+                label = self._font.render(
+                    t(f"branch.{key}", default=BRANCH_LABEL[key]), True, ink
+                )
                 surf.blit(
                     label,
                     (local.right + 6, local.y + (ROW_H - label.get_height()) // 2),
