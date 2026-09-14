@@ -1,129 +1,129 @@
 {
   "format": "fall-of-penghu-help",
-  "version": 1,
+  "version": 2,
   "tabs": [
     {
-      "id": "map",
-      "title": "MAP",
-      "lead": "Move the theater. Units stay put until you order them.",
+      "id": "overview",
+      "title": "Overview",
+      "lead": "You hold the Penghu islands. No help is coming. /nChina attacks from the sea and from the air. /nYour job is to last as long as you can. /nChina wins when none of your ground units remain on the islands. /nAircraft and ships do not hold an island. Only ground units do: /infantry /tank /artillery /aa_pickup /aaw /truck. /nDo not give up inhabited islands without a fight. Your lookouts sit on them. /nChina sends landing ships /landing_ship_c, infantry /infantry_c, scouts /scout_c, and kamikaze drones /drone_c. /nForest hides you. Open ground is seen from far away. /nThe rest of this manual covers the camera, orders, fire, vision, messages, and ferries.",
+      "shots": [],
+      "notes": [
+        "Pause with /esc or the /pause button on the right. Pause does not quit the game.",
+        "This manual opens with /f1 or the /help button."
+      ]
+    },
+    {
+      "id": "camera",
+      "title": "Camera",
+      "lead": "To pan the camera, use /W /A /S /D or the arrow keys. You can also hold /lmb on empty ground and drag. /nTo zoom, use /Q /E or /wheel. /nTo open pause, use /esc or /pause. /nTo switch radar mode, use /R. /nTo return the view to Penghu, press /home or /C.",
       "shots": [
         {
-          "file": "help_map_pan.png",
-          "caption": "WASD pans. Hold MMB and drag for the same."
+          "file": "help_camera_speed.png",
+          "caption": "Speed: /f2 /f3 /f4 /f5 or the buttons on the bar. 0× stops time."
         },
         {
-          "file": "help_map_zoom.png",
-          "caption": "Q / E or the wheel zooms. Home recenters Penghu."
-        },
-        {
-          "file": "help_map_time.png",
-          "caption": "Space pauses. F1…F5 set speed. Top bar shows the same."
-        },
-        {
-          "file": "help_map_radar.png",
-          "caption": "R or MOD R switches the radar plot. N is the map."
+          "file": "help_camera_radar.png",
+          "caption": "/R or the VIEW MODE buttons: /map map and /radar radar."
         }
       ],
       "notes": [
-        "Esc opens the pause sheet. It does not quit.",
-        "F11 is the frame profiler. F12 is debug chrome."
+        "/esc opens pause. The game does not quit."
       ]
     },
     {
       "id": "units",
-      "title": "UNITS",
-      "lead": "Select, then point. The planner stays on land, water, or air.",
+      "title": "Units",
+      "lead": "To select a unit or clear the selection, use /lmb. To add another unit, use /shift + /lmb. /nTo select a group, hold /shift + /lmb and drag a box. /nTo move a unit, use /rmb. /nTo add a waypoint, use /shift + /rmb. That works only for sea /ferry and air /drone. /nGround units do not walk on water. A new /rmb sets a new path.",
       "shots": [
         {
-          "file": "help_unit_select.png",
-          "caption": "LMB picks a unit. Shift+drag boxes a group."
-        },
-        {
-          "file": "help_unit_move.png",
-          "caption": "RMB sends the selection. Land will not walk into the sea."
-        },
-        {
-          "file": "help_unit_way.png",
-          "caption": "Shift+RMB adds a sea or air waypoint instead of replacing the route."
-        },
-        {
-          "file": "help_unit_halt.png",
-          "caption": "Halt from the order sheet, or give a new RMB."
+          "file": "help_units_panel.png",
+          "caption": "The UNITS window. Uncheck a kind to hide it on the map. The units themselves stay in the world."
         }
       ],
       "notes": [
-        "One click on empty ground clears the selection.",
-        "A port, ferry, or bridge selected alone opens its local commands."
+        "You can drag the UNITS window by its title.",
+        "Air, Land, Sea, and Static branches open with the arrow on the left."
       ]
     },
     {
-      "id": "sight",
-      "title": "SIGHT",
-      "lead": "You see what sensors report. China does the same.",
+      "id": "warfare",
+      "title": "Warfare",
+      "lead": "The RANGE window draws weapon reach for /infantry /aa_pickup /tank /aaw /artillery. /n/G hides every RANGE ring or brings them back. /nThe TARGETS window appears when a shooter is selected. /n FIRE — the battery shoots on its own, using the filter. /n HOLD — it stays silent until you switch back to FIRE. /nCheckboxes in TARGETS pick who you may hit: /drone_c /scout_c /landing_ship_c /infantry_c and the other kinds. /n AIM, PICK, and CLR exist only on /artillery. /n AIM — the next /lmb on the map sets the impact point. CLR clears that point. /n PICK — click /lmb on specific enemies. A box works too. /n/shift + PICK clears that list. /n/rmb cancels AIM, PICK, or a port and ferry command. /nArtillery fires only while standing still. /nA unit heals on its own if it is idle and was not hit recently. Full health takes two in-game days. /nAmmunition does not refill.",
       "shots": [
         {
-          "file": "help_sight_fog.png",
-          "caption": "Unseen ground stays dark. Contacts fade when the track dies."
+          "file": "help_warfare_range.png",
+          "caption": "RANGE. Check the rings for /infantry /aa_pickup /tank /aaw /artillery."
         },
         {
-          "file": "help_sight_vision.png",
-          "caption": "VISION toggles rings. RANGE is weapons. UNITS hides kinds on the map."
+          "file": "help_warfare_targets.png",
+          "caption": "TARGETS. HOLD and FIRE, plus filters for Air, Land, Sea, and Static."
+        },
+        {
+          "file": "help_warfare_arty.png",
+          "caption": "/artillery only: AIM on the map, scatter ring. PICK marks priority targets."
         }
       ],
       "notes": [
-        "The CONTACTS stack is the same feed as the chat on the left.",
-        "Satellite windows are on the top bar as SAT."
+        "Healing does not run while the unit is moving or was just hurt."
       ]
     },
     {
-      "id": "ports",
-      "title": "PORTS",
-      "lead": "Ferries move land units. A port holds a small pool of hulls.",
+      "id": "intel",
+      "title": "Intel",
+      "lead": "You see what your sensors see. China sees the same with its own. /nThe VISION window draws sight rings. Primitive is the naked eye. Advanced is long optics, like /scout_c. /nOpen ground is seen farthest. Grass is closer. Forest is closer still and hides better. /nThe /sat icon at the top right is China's satellite. /nGreen /sat: the satellite is looking. Red /sat_red: the satellite is silent. A timer sits next to it. /nWhile it looks, it sees vehicles and ships on open ground and in grass. /nIt does not see infantry /infantry. /nNobody is seen from orbit in forest. /nWhile /sat is green, a SPOTTED notice from /drone_c or /scout_c comes only from forest. /nAn island is yours while your ground units stand on it. /nIf only Chinese ground units are on it, the island is theirs. /port and /airfield go with it. /nAir /drone /scout and sea /ferry /ship do not hold an island. /nA lost inhabited island is also a lost lookout.",
       "shots": [
         {
-          "file": "help_port_launch.png",
-          "caption": "Launch, then click water. The hull leaves that port."
+          "file": "help_intel_vision.png",
+          "caption": "VISION. Open ground is on by default. Turn on grass and forest yourself."
         },
         {
-          "file": "help_port_load.png",
-          "caption": "Load a land unit, then unload on another shore."
-        }
-      ],
-      "notes": [
-        "Recall brings an empty ferry home. Destroy is only for a selected bridge."
-      ]
-    },
-    {
-      "id": "fire",
-      "title": "FIRE",
-      "lead": "Doctrine and magazines sit on the selected battery.",
-      "shots": [
-        {
-          "file": "help_fire_doctrine.png",
-          "caption": "FIRE / HOLD / filters. Artillery can aim a point on the map."
+          "file": "help_intel_sat.png",
+          "caption": "/sat on the right of the bar. The timer is how long the window stays open, or when it opens again."
         },
         {
-          "file": "help_fire_ammo.png",
-          "caption": "Magazine / reserve on the tooltip. RLD is a clip change."
+          "file": "help_intel_island.png",
+          "caption": "The island changes colour when none of your ground units remain and Chinese ground units are there."
         }
       ],
-      "notes": [
-        "Idle units mend over two calendar days. Spare rounds do not come back."
-      ]
+      "notes": []
     },
     {
-      "id": "hold",
-      "title": "HOLD",
-      "lead": "There is no final win. Hold the inhabited islands as long as you can.",
+      "id": "messages",
+      "title": "Messages",
+      "lead": "The CONTACTS journal sits at the bottom right. /n CONTACT — you first saw an enemy: /drone_c /scout_c /landing_ship_c /ship_c. /n SPOTTED — their /drone_c or /scout_c sees you. /n LOSSES — one of yours was wrecked. /n AMMO — magazines are nearly gone, or already empty. /n SAT — the satellite /sat came up or /sat_red went down. /n THEATER — an island was taken or retaken, or a landing /landing_ship_c is under way. /n LIFT — a /ferry load or unload. /nClick a line to send the camera to the event. /n SET opens filters: what to show, and whether to drop speed to 1× or 0×. /n WIN undocks the window. DOCK pins it back.",
       "shots": [
         {
-          "file": "help_hold_islands.png",
-          "caption": "An island flips when the last player ground unit leaves it."
+          "file": "help_messages_contacts.png",
+          "caption": "CONTACTS. SET is settings. WIN and DOCK free the window or pin it."
+        },
+        {
+          "file": "help_messages_set.png",
+          "caption": "In SET, each type has chat visibility, speed OFF / 1× / 0×, and icon filters."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "id": "sea",
+      "title": "Sea",
+      "lead": "A /ferry carries ground units only: /infantry /tank /artillery /aa_pickup /aaw /truck. /nSelect your /port and Launch, then /lmb on water — a hull leaves the port stock. /n Recall, then /lmb on your /ferry — an empty hull returns to stock. A port holds up to 20 hulls. /nSelect a /ferry: Load and /lmb on your ground unit to embark. Unload and /lmb on a shore or your /port to disembark. /nA /bridge: select it and Destroy. Without the bridge, ground units cannot walk the strait.",
+      "shots": [
+        {
+          "file": "help_sea_port.png",
+          "caption": "/port: Launch on water, Recall on your /ferry. Hull stock shows on the port."
+        },
+        {
+          "file": "help_sea_ferry.png",
+          "caption": "/ferry: Load — click your unit. Unload — click the shore or a port."
+        },
+        {
+          "file": "help_sea_bridge.png",
+          "caption": "/bridge. Destroy breaks it at once. Ground units can no longer walk the strait."
         }
       ],
       "notes": [
-        "Air does not hold ground. China wins when no player land unit remains on any island.",
-        "You may leave to the menu at any time from pause."
+        "Clicking the same port or ferry command again cancels it.",
+        "/rmb also cancels the command in this mode."
       ]
     }
   ]

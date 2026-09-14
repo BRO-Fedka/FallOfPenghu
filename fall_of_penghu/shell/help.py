@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pygame
 
+from fall_of_penghu.shell.richtext import InlineIcons, blit_rich
 from fall_of_penghu.shell.theme import button, fonts, frame, ink_at, label, panel
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -25,6 +26,7 @@ class HelpBook:
         self._scroll = 0
         self._title, self._font, self._small = fonts()
         self._shots: dict[str, pygame.Surface] = {}
+        self._icons = InlineIcons()
 
     def open(self, tab_id: str | None = None) -> None:
         if tab_id:
@@ -96,9 +98,19 @@ class HelpBook:
         self, clip: pygame.Surface, tab: dict, ink: tuple[int, int, int]
     ) -> None:
         y = 10 - self._scroll
-        lead = self._font.render(str(tab.get("lead") or ""), True, ink)
-        clip.blit(lead, (12, y))
-        y += lead.get_height() + 12
+        pad = 12
+        max_w = max(40, clip.get_width() - pad * 2)
+        y += blit_rich(
+            clip,
+            str(tab.get("lead") or ""),
+            self._font,
+            ink,
+            pad,
+            y,
+            max_w,
+            self._icons,
+        )
+        y += 12
         shots = list(tab.get("shots") or [])
         col_w = (clip.get_width() - 36) // 2
         for i in range(0, len(shots), 2):
@@ -109,9 +121,17 @@ class HelpBook:
                 row_h = max(row_h, h)
             y += row_h + SHOT_GAP
         for note in tab.get("notes") or []:
-            line = self._small.render(f"·  {note}", True, ink)
-            clip.blit(line, (12, y))
-            y += line.get_height() + 4
+            h = blit_rich(
+                clip,
+                f"·  {note}",
+                self._small,
+                ink,
+                pad,
+                y,
+                max_w,
+                self._icons,
+            )
+            y += h + 4
         overflow = max(0, y + self._scroll - clip.get_height() + 8)
         if overflow < self._scroll:
             self._scroll = overflow
@@ -128,9 +148,17 @@ class HelpBook:
         name = str(shot.get("file") or "")
         pic = self._image(name, width, SHOT_H, ink)
         clip.blit(pic, (x, y))
-        cap = self._small.render(str(shot.get("caption") or ""), True, ink)
-        clip.blit(cap, (x, y + SHOT_H + 4))
-        return SHOT_H + 8 + cap.get_height()
+        cap_h = blit_rich(
+            clip,
+            str(shot.get("caption") or ""),
+            self._small,
+            ink,
+            x,
+            y + SHOT_H + 4,
+            width,
+            self._icons,
+        )
+        return SHOT_H + 8 + cap_h
 
     def _image(
         self, name: str, w: int, h: int, ink: tuple[int, int, int]
@@ -144,8 +172,10 @@ class HelpBook:
         if name and path.is_file():
             try:
                 loaded = pygame.image.load(str(path))
-                raw = pygame.transform.smoothscale(loaded, (w, h))
-            except pygame.error:
+                src = pygame.Surface(loaded.get_size(), pygame.SRCALPHA, 32)
+                src.blit(loaded, (0, 0))
+                raw = pygame.transform.smoothscale(src, (w, h))
+            except (pygame.error, ValueError):
                 raw = None
         if raw is None:
             raw = panel((w, h), 160)
