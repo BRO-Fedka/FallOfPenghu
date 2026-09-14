@@ -187,8 +187,8 @@
       "must_halt": true,
       "speed_mps": 350.0,
       "life_sim_s": 40.0,
-      "scatter_min_m": 20.0,
-      "scatter_max_m": 250.0,
+      "scatter_min_m": 10.0,
+      "scatter_max_m": 125.0,
       "clip": 8,
       "reserve": 292,
       "reload_sim_s": 60.0

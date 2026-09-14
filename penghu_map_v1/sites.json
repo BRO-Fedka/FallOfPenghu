@@ -1441,17 +1441,6 @@
       "mobility": "air"
     },
     {
-      "id": "dbg_infantry_022",
-      "kind": "infantry",
-      "name": "Infantry",
-      "faction": "C",
-      "x": 9527.24501478795,
-      "y": -24863.00514654169,
-      "heading": 0.0,
-      "speed_mps": 4.0,
-      "mobility": "land"
-    },
-    {
       "id": "dbg_aaw_001",
       "kind": "aaw",
       "name": "AAW",
