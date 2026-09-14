@@ -1,7 +1,11 @@
 from fall_of_penghu.world.perception.catalog import DetectionCatalog
 from fall_of_penghu.world.perception.imprint import ContactImprint
 from fall_of_penghu.world.perception.perception import Perception
-from fall_of_penghu.world.perception.satellite import SatelliteStatus, format_calendar_span
+from fall_of_penghu.world.perception.satellite import (
+    SatelliteStatus,
+    format_calendar_span,
+    format_hhmm,
+)
 
 __all__ = [
     "ContactImprint",
@@ -9,4 +13,5 @@ __all__ = [
     "Perception",
     "SatelliteStatus",
     "format_calendar_span",
+    "format_hhmm",
 ]

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from fall_of_penghu.world.entities.game_object import FACTION_PLAYER, GameObject
+from fall_of_penghu.world.entities.game_object import FACTION_CHINA, FACTION_PLAYER, GameObject
 from fall_of_penghu.world.entities.kinds import SHOT_KINDS, is_static_kind
 
 if TYPE_CHECKING:
@@ -22,12 +22,10 @@ def wreck(obj: GameObject, world: World | None = None) -> None:
         cargo = world.entities.get(cargo_id)
         if cargo is not None:
             wreck(cargo, world)
-    if (
-        world is not None
-        and obj.faction == FACTION_PLAYER
-        and obj.kind not in SHOT_KINDS
-        and not is_static_kind(obj.kind)
-    ):
+    combat = obj.kind not in SHOT_KINDS and not is_static_kind(obj.kind)
+    if world is not None and combat and obj.faction == FACTION_CHINA:
+        world.kills[obj.kind] = world.kills.get(obj.kind, 0) + 1
+    if world is not None and combat and obj.faction == FACTION_PLAYER:
         from fall_of_penghu.world.victory import check_china_victory
 
         check_china_victory(world)

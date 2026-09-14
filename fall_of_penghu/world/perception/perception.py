@@ -128,6 +128,40 @@ class Perception:
                 rings.append((obj.x, obj.y, inner))
         return rings
 
+    def sensor_rings_for(
+        self,
+        objects: list[GameObject],
+        channel: str,
+        cover: str = "open",
+    ) -> list[tuple[float, float, float]]:
+        rings: list[tuple[float, float, float]] = []
+        for obj in objects:
+            if channel not in self.catalog.emitters(obj.kind):
+                continue
+            radius = self.catalog.emitter_range_m(channel, obj.kind)
+            if radius is None or radius <= 0.0:
+                continue
+            radius *= self.catalog.darkness_scale(channel, self._darkness)
+            radius *= self.catalog.cover_factor(channel, cover)
+            if radius <= 0.0:
+                continue
+            rings.append((obj.x, obj.y, radius))
+        return rings
+
+    def engagement_rings_for(
+        self, objects: list[GameObject]
+    ) -> list[tuple[float, float, float]]:
+        rings: list[tuple[float, float, float]] = []
+        for obj in objects:
+            radius = self.catalog.engagement_m(obj.kind)
+            if radius is None:
+                continue
+            rings.append((obj.x, obj.y, radius))
+            inner = self.catalog.min_engagement_m(obj.kind)
+            if inner > 0.0:
+                rings.append((obj.x, obj.y, inner))
+        return rings
+
     def satellite_status(self, calendar_time: float) -> SatelliteStatus:
         return self.satellite.status(calendar_time)
 

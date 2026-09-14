@@ -88,12 +88,27 @@ class Clock:
         if self.speed > SPEEDS[-1]:
             self.set_speed(SPEEDS[-1])
 
-    def clock_label(self) -> str:
+    def day_number(self) -> int:
+        return self.calendar_day + 1
+
+    def hours_minutes(self) -> tuple[int, int]:
         secs = int(self.time_of_day * 24.0 * 3600.0) % (24 * 3600)
-        hours = secs // 3600
-        minutes = (secs % 3600) // 60
-        seconds = secs % 60
-        return f"D{self.calendar_day + 1} {hours:02d}:{minutes:02d}:{seconds:02d}"
+        return secs // 3600, (secs % 3600) // 60
+
+    def digital_label(self, clock_12h: bool = False) -> str:
+        hours, minutes = self.hours_minutes()
+        if not clock_12h:
+            return f"{hours:02d}:{minutes:02d}"
+        suffix = "a.m." if hours < 12 else "p.m."
+        h12 = hours % 12
+        if h12 == 0:
+            h12 = 12
+        return f"{h12}:{minutes:02d} {suffix}"
+
+    def clock_label(self) -> str:
+        hours, minutes = self.hours_minutes()
+        secs = int(self.time_of_day * 24.0 * 3600.0) % 60
+        return f"D{self.day_number()} {hours:02d}:{minutes:02d}:{secs:02d}"
 
     def speed_label(self, speed: float | None = None) -> str:
         value = self.speed if speed is None else speed

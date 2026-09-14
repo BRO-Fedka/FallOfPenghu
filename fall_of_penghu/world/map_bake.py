@@ -24,7 +24,7 @@ LANE_OVERLAP = 0.70
 
 
 class MapBake:
-    """Cover grids, lookout shores, heat land masks, forest lanes."""
+    """Cover grids, lookout shores, heat land masks, forest lanes, sea nav."""
 
     def __init__(self, payload: dict[str, Any]) -> None:
         self.payload = payload
@@ -123,8 +123,16 @@ class MapBake:
                         int(iid): list(pts) for iid, pts in forest.lanes.items()
                     },
                 },
+                "sea": _sea_blob(world),
             }
         )
+
+    def put_sea(self, world: World) -> bool:
+        blob = _sea_blob(world)
+        if blob is None:
+            return False
+        self.payload["sea"] = blob
+        return True
 
 
 def fingerprint(world: World) -> dict[str, Any]:
@@ -152,6 +160,39 @@ def fingerprint(world: World) -> dict[str, Any]:
         "road_on_m": float(ROAD_ON_M),
         "lane_m": float(lane_m),
     }
+
+
+def sea_fingerprint(md) -> dict[str, Any]:
+    from fall_of_penghu.world.entities.planner import (
+        SEA_CELL_M,
+        SEA_MIN_SPAN_M,
+        SEA_PAD_M,
+    )
+    from fall_of_penghu.world.entities.sea import SEA_LEAF_MAX
+
+    frame_min = md.manifest.get("frame_min_xy") or [-100000.0, -100000.0]
+    frame_max = md.manifest.get("frame_max_xy") or [100000.0, 100000.0]
+    return {
+        "taiwan_hash": _layer_hash(md.map_dir, "taiwan.geojson"),
+        "taiwan_count": len(md.taiwan),
+        "coast_hash": _layer_hash(md.map_dir, "coast.geojson"),
+        "coast_count": len(md.coast),
+        "sea_cell_m": float(SEA_CELL_M),
+        "sea_leaf_max": int(SEA_LEAF_MAX),
+        "sea_min_span_m": float(SEA_MIN_SPAN_M),
+        "sea_pad_m": float(SEA_PAD_M),
+        "frame_min_xy": [float(frame_min[0]), float(frame_min[1])],
+        "frame_max_xy": [float(frame_max[0]), float(frame_max[1])],
+    }
+
+
+def _sea_blob(world: World) -> dict[str, Any] | None:
+    planner = getattr(world.entities, "planner", None)
+    if planner is None:
+        return None
+    blob = planner.dump_sea()
+    blob["fingerprint"] = sea_fingerprint(world.map)
+    return blob
 
 
 def restore_grid(cells: dict, cell_m: float) -> UniformGrid:

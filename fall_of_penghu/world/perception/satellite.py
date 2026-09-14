@@ -60,3 +60,10 @@ def format_calendar_span(seconds: float) -> str:
     if hours:
         return f"{hours}h {minutes:02d}m"
     return f"{minutes:02d}:{secs:02d}"
+
+
+def format_hhmm(seconds: float) -> str:
+    total = max(0, int(seconds))
+    hours, rem = divmod(total, 3600)
+    minutes = rem // 60
+    return f"{hours:02d}:{minutes:02d}"

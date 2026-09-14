@@ -10,12 +10,12 @@ from fall_of_penghu.world.entities.dynamic import DynamicObject
 from fall_of_penghu.world.entities.land import LandRouter
 from fall_of_penghu.world.entities.land.limits import (
     ASTAR_MAX_ITERS,
-    SEA_ASTAR_MAX_ITERS,
     SearchLimitError,
     tick,
     unwind,
 )
 from fall_of_penghu.world.entities.route import Route
+from fall_of_penghu.world.entities.sea import SeaGraph
 from fall_of_penghu.world.map import MapData, PolyFeature
 
 LAND_SNAP_M = 12.0
@@ -58,7 +58,7 @@ def _point_in_poly(x: float, y: float, feat: PolyFeature) -> bool:
 class Planner:
     """Build a Route polyline. Does not move units."""
 
-    def __init__(self, world: MapData) -> None:
+    def __init__(self, world: MapData, bake=None) -> None:
         self._map = world
         self._land_nodes: list[tuple[float, float]] = []
         self._land_adj: list[list[tuple[int, float]]] = []
@@ -68,11 +68,12 @@ class Planner:
         self._sea_h = 0
         self._sea_block: list[bool] = []
         self._sea_coast: set[int] = set()
-        self._sea_pass: dict[int, int] = {}
+        self.sea = SeaGraph()
+        self.sea_from_bake = False
         self._land_walk: list[bool] = []
         self._road_cells: set[int] = set()
         self.land = LandRouter(world)
-        self._build_sea()
+        self._build_sea(bake)
 
     def plan(
         self,
@@ -441,7 +442,10 @@ class Planner:
         self._extend_pts(pts, hop)
         return Route(pts) if len(pts) >= 2 else None
 
-    def _build_sea(self) -> None:
+    def _build_sea(self, bake=None) -> None:
+        if self._restore_sea(bake):
+            self.sea_from_bake = True
+            return
         # The whole map border is a spawn and reload zone, so every corner of the
         # frame has to be navigable. A grid that only padded the islands left
         # ships from the north and south edges with no route at all.
@@ -475,7 +479,48 @@ class Planner:
         self._sea_h = h
         self._sea_block = block
         self._sea_coast = _coast_cells(block, w, h)
-        self._sea_pass = {}
+        self.sea = SeaGraph.from_grid((minx, miny), cell, w, h, block)
+        self.sea_from_bake = False
+
+    def dump_sea(self) -> dict:
+        return {
+            "origin": (float(self._sea_origin[0]), float(self._sea_origin[1])),
+            "cell_m": float(SEA_CELL_M),
+            "w": int(self._sea_w),
+            "h": int(self._sea_h),
+            "block": _pack_block(self._sea_block),
+            "graph": self.sea.dump(),
+        }
+
+    def _restore_sea(self, bake) -> bool:
+        payload = getattr(bake, "payload", None)
+        if not isinstance(payload, dict):
+            return False
+        raw = payload.get("sea")
+        if not isinstance(raw, dict):
+            return False
+        from fall_of_penghu.world.map_bake import sea_fingerprint
+
+        if raw.get("fingerprint") != sea_fingerprint(self._map):
+            return False
+        try:
+            origin = (float(raw["origin"][0]), float(raw["origin"][1]))
+            cell = float(raw["cell_m"])
+            w = int(raw["w"])
+            h = int(raw["h"])
+            block = _unpack_block(raw["block"], w * h)
+            graph = SeaGraph.from_dump(raw["graph"])
+        except (KeyError, TypeError, ValueError, IndexError):
+            return False
+        if cell != SEA_CELL_M or graph is None or graph._w != w or graph._h != h:
+            return False
+        self._sea_origin = origin
+        self._sea_w = w
+        self._sea_h = h
+        self._sea_block = block
+        self._sea_coast = _coast_cells(block, w, h)
+        self.sea = graph
+        return True
 
     def _sea_index(self, x: float, y: float) -> int | None:
         gx = int((x - self._sea_origin[0]) / SEA_CELL_M)
@@ -503,6 +548,69 @@ class Planner:
             if self.is_land(a[0] + dx * t, a[1] + dy * t):
                 return True
         return False
+
+    def _seg_hits_nav(self, a: tuple[float, float], b: tuple[float, float]) -> bool:
+        """Grid walk first; sample the coast polygons only if the line grazes land."""
+        blocked, near_coast = self._walk_sea(a, b)
+        if blocked:
+            return True
+        if not near_coast:
+            return False
+        return self._seg_hits_land(a, b)
+
+    def _walk_sea(
+        self, a: tuple[float, float], b: tuple[float, float]
+    ) -> tuple[bool, bool]:
+        ox, oy = self._sea_origin
+        cell = SEA_CELL_M
+        w, h = self._sea_w, self._sea_h
+        block = self._sea_block
+        coast = self._sea_coast
+        x0 = (a[0] - ox) / cell
+        y0 = (a[1] - oy) / cell
+        x1 = (b[0] - ox) / cell
+        y1 = (b[1] - oy) / cell
+        gx = int(x0)
+        gy = int(y0)
+        gx_end = int(x1)
+        gy_end = int(y1)
+        dx = x1 - x0
+        dy = y1 - y0
+        step_x = 1 if dx > 0.0 else -1 if dx < 0.0 else 0
+        step_y = 1 if dy > 0.0 else -1 if dy < 0.0 else 0
+        inf = 1e30
+        t_delta_x = abs(1.0 / dx) if dx else inf
+        t_delta_y = abs(1.0 / dy) if dy else inf
+        if dx > 0.0:
+            t_max_x = (gx + 1.0 - x0) * t_delta_x
+        elif dx < 0.0:
+            t_max_x = (x0 - gx) * t_delta_x
+        else:
+            t_max_x = inf
+        if dy > 0.0:
+            t_max_y = (gy + 1.0 - y0) * t_delta_y
+        elif dy < 0.0:
+            t_max_y = (y0 - gy) * t_delta_y
+        else:
+            t_max_y = inf
+        near = False
+        for _ in range(w + h + 4):
+            if gx < 0 or gy < 0 or gx >= w or gy >= h:
+                return True, True
+            i = gy * w + gx
+            if block[i]:
+                return True, True
+            if i in coast:
+                near = True
+            if gx == gx_end and gy == gy_end:
+                return False, near
+            if t_max_x < t_max_y:
+                gx += step_x
+                t_max_x += t_delta_x
+            else:
+                gy += step_y
+                t_max_y += t_delta_y
+        return True, True
 
     def nearest_water(self, x: float, y: float) -> tuple[float, float] | None:
         idx = self._nearest_sea_index(x, y)
@@ -549,22 +657,46 @@ class Planner:
         pts: list[tuple[float, float]] = [start]
         if berth_a != pts[-1]:
             pts.append(berth_a)
-        if not self._seg_hits_land(berth_a, berth_b):
+        if not self._seg_hits_nav(berth_a, berth_b):
             if berth_b != pts[-1]:
                 pts.append(berth_b)
             if goal != pts[-1]:
                 pts.append(goal)
             return Route(pts) if len(pts) >= 2 else None
-        came = self._astar_sea(sa, sb)
+        la = self.sea.leaf_of_cell(sa)
+        lb = self.sea.leaf_of_cell(sb)
+        if la is None or lb is None:
+            return None
+        came = self.sea.astar(la, lb)
         if came is None:
             return None
         for i in came:
-            pt = self._sea_xy(i)
+            pt = self.sea.nodes[i]
             if pt != pts[-1]:
                 pts.append(pt)
+        if berth_b != pts[-1]:
+            pts.append(berth_b)
         if goal != pts[-1]:
             pts.append(goal)
+        pts = self._pull_sea(pts)
         return Route(pts) if len(pts) >= 2 else None
+
+    def _pull_sea(
+        self, pts: list[tuple[float, float]]
+    ) -> list[tuple[float, float]]:
+        """Drop coarse-cell zigzags while the next waypoint stays in line of sight."""
+        if len(pts) < 3:
+            return pts
+        out = [pts[0]]
+        i = 0
+        n = len(pts)
+        while i < n - 1:
+            j = i + 1
+            while j + 1 < n and not self._seg_hits_nav(pts[i], pts[j + 1]):
+                j += 1
+            out.append(pts[j])
+            i = j
+        return out
 
     def _astar_nodes(
         self,
@@ -590,81 +722,6 @@ class Planner:
                     prev[v] = u
                     hx, hy = nodes[v]
                     heappush(heap, (nxt + hypot(hx - gx, hy - gy), v))
-        return None
-
-    def _sea_step_ok(self, u: int, v: int) -> bool:
-        """Fine check near shores: a strip thinner than a cell still blocks.
-
-        Sampling on every expansion cost a third of a second on long coastal
-        legs, so each coast cell keeps a bitmask of the eight steps it may take,
-        baked when the grid is built.
-        """
-        w = self._sea_w
-        dx = (v % w) - (u % w)
-        dy = (v // w) - (u // w)
-        bit = (dy + 1) * 3 + (dx + 1)
-        return bool(self._sea_step_mask(u) & (1 << bit))
-
-    def _sea_step_mask(self, u: int) -> int:
-        mask = self._sea_pass.get(u)
-        if mask is not None:
-            return mask
-        mask = 0
-        w = self._sea_w
-        here = self._sea_xy(u)
-        ux, uy = u % w, u // w
-        for oy in (-1, 0, 1):
-            for ox in (-1, 0, 1):
-                if not ox and not oy:
-                    continue
-                nx, ny = ux + ox, uy + oy
-                if nx < 0 or ny < 0 or nx >= w or ny >= self._sea_h:
-                    continue
-                if self._seg_hits_land(here, self._sea_xy(ny * w + nx)):
-                    continue
-                mask |= 1 << ((oy + 1) * 3 + (ox + 1))
-        self._sea_pass[u] = mask
-        return mask
-
-    def _astar_sea(self, start: int, goal: int) -> list[int] | None:
-        w, h = self._sea_w, self._sea_h
-        gx, gy = goal % w, goal // w
-        heap: list[tuple[float, int]] = [(0.0, start)]
-        cost = {start: 0.0}
-        prev: dict[int, int] = {}
-        block = self._sea_block
-        coast = self._sea_coast
-        steps = 0
-        while heap:
-            steps = tick("planner.astar_sea", steps, SEA_ASTAR_MAX_ITERS)
-            _, u = heappop(heap)
-            if u == goal:
-                return unwind(prev, u, "planner.astar_sea")
-            ux, uy = u % w, u // w
-            near_land = u in coast
-            for dx, dy, step in (
-                (-1, 0, 1.0),
-                (1, 0, 1.0),
-                (0, -1, 1.0),
-                (0, 1, 1.0),
-                (-1, -1, 1.414),
-                (-1, 1, 1.414),
-                (1, -1, 1.414),
-                (1, 1, 1.414),
-            ):
-                vx, vy = ux + dx, uy + dy
-                if vx < 0 or vy < 0 or vx >= w or vy >= h:
-                    continue
-                v = vy * w + vx
-                if block[v]:
-                    continue
-                if (near_land or v in coast) and not self._sea_step_ok(u, v):
-                    continue
-                nxt = cost[u] + step
-                if nxt < cost.get(v, 1e30):
-                    cost[v] = nxt
-                    prev[v] = u
-                    heappush(heap, (nxt + hypot(vx - gx, vy - gy), v))
         return None
 
     def _astar_land(self, start: int, goal: int) -> list[int] | None:
@@ -735,3 +792,18 @@ def _span_axis(lo: float, hi: float, minimum: float) -> tuple[float, float]:
     mid = (lo + hi) * 0.5
     half = minimum * 0.5
     return mid - half, mid + half
+
+
+def _pack_block(block: list[bool]) -> bytes:
+    out = bytearray((len(block) + 7) // 8)
+    for i, flag in enumerate(block):
+        if flag:
+            out[i >> 3] |= 1 << (i & 7)
+    return bytes(out)
+
+
+def _unpack_block(data: bytes, n: int) -> list[bool]:
+    raw = bytes(data)
+    if n < 0 or len(raw) < (n + 7) // 8:
+        raise ValueError("sea block is truncated")
+    return [bool(raw[i >> 3] & (1 << (i & 7))) for i in range(n)]

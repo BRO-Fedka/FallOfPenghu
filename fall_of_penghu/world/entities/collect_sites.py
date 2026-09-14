@@ -6,8 +6,6 @@ import json
 import sys
 from pathlib import Path
 
-import numpy as np
-
 from fall_of_penghu.world.map import MapData, PolyFeature, load_map
 
 SITES_NAME = "sites.json"
@@ -75,6 +73,8 @@ def _centroid(points: list[tuple[float, float]]) -> tuple[float, float]:
 
 
 def _pier_centroids(map_dir: Path) -> list[tuple[float, float]]:
+    import numpy as np
+
     path = map_dir / PIER_FIELD_NAME
     with np.load(path) as z:
         mask = z["mask"]

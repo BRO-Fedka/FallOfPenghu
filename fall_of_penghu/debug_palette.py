@@ -11,6 +11,7 @@ COLS = 4
 CELL = 32
 PAD = 6
 TITLE_H = 24
+KILL_H = 22
 FACTION_W = 22
 PANEL_H = 40
 PLACE_FACTIONS = (FACTION_PLAYER, FACTION_CHINA)
@@ -32,6 +33,8 @@ class DebugPalette:
         self._panel = pygame.Rect(0, 0, 1, 1)
         self._drag = False
         self._drag_off = (0, 0)
+        self._kill = pygame.Rect(0, 0, 1, 1)
+        self.kill_ground = False
         self._font = pygame.font.SysFont("consolas", 13)
 
     def refresh(self, catalog: DetectionCatalog | None = None) -> None:
@@ -47,6 +50,9 @@ class DebugPalette:
     ) -> bool:
         self._layout()
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            if self._kill.collidepoint(event.pos):
+                self.kill_ground = True
+                return True
             for rect, faction in self._faction_btns:
                 if rect.collidepoint(event.pos):
                     self.faction = faction
@@ -126,6 +132,20 @@ class DebugPalette:
                 surf.blit(icon, dest)
             if local.collidepoint(mx - self.x, my - self.y):
                 tip = kind_label(kind)
+        kill = pygame.Rect(self._kill.x - self.x, self._kill.y - self.y, self._kill.w, self._kill.h)
+        hover_kill = kill.collidepoint(mx - self.x, my - self.y)
+        pygame.draw.rect(surf, (ink[0], ink[1], ink[2], 40 if hover_kill else 22), kill, border_radius=3)
+        pygame.draw.rect(surf, (*ink, 160 if hover_kill else 90), kill, 1, border_radius=3)
+        kill_l = self._font.render("WRECK LAND", True, ink)
+        surf.blit(
+            kill_l,
+            (
+                kill.x + (kill.w - kill_l.get_width()) // 2,
+                kill.y + (kill.h - kill_l.get_height()) // 2,
+            ),
+        )
+        if hover_kill:
+            tip = "Wreck all player ground units"
         renderer.overlay(surf, (self._panel.x, self._panel.y))
         if tip:
             text = self._font.render(tip, True, ink)
@@ -144,9 +164,15 @@ class DebugPalette:
         n = max(len(self._kinds), 1)
         rows = (n + COLS - 1) // COLS
         width = PAD * 2 + COLS * CELL + (COLS - 1) * PAD
-        height = TITLE_H + PAD + rows * CELL + (rows - 1) * PAD + PAD
+        height = TITLE_H + PAD + rows * CELL + (rows - 1) * PAD + PAD + KILL_H + PAD
         self._panel = pygame.Rect(self.x, self.y, width, height)
         self._title = pygame.Rect(self.x, self.y, width, TITLE_H)
+        self._kill = pygame.Rect(
+            self.x + PAD,
+            self.y + height - PAD - KILL_H,
+            width - PAD * 2,
+            KILL_H,
+        )
         self._faction_btns = []
         fx = self.x + width - PAD - FACTION_W
         for faction in reversed(PLACE_FACTIONS):

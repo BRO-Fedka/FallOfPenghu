@@ -30,6 +30,9 @@ class SoftwareMapRenderer:
     def palette(self) -> dict[str, tuple[int, int, int]]:
         return palette_for(self.radar, self.tod)
 
+    def release(self) -> None:
+        self.world = None
+
     def resize(self, width: int, height: int, surface: pygame.Surface | None = None) -> None:
         if surface is not None:
             self.surface = surface

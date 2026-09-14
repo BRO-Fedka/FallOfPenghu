@@ -66,7 +66,11 @@ class EngagePalette:
         if catalog is None or not self.visible(selection, entities):
             return False
         shooters = self._shooters(selection, entities)
-        self._layout(shooters, catalog, selection, screen_w, screen_h)
+        ammo_n = len(_ammo_lines(shooters, catalog, 0.0))
+        self._layout(shooters, catalog, selection, screen_w, screen_h, ammo_n)
+        if selection is not None and selection.pick_targets:
+            if not any(obj.kind == "artillery" for obj in shooters):
+                selection.pick_targets = False
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             if self._title.collidepoint(event.pos):
                 self._drag = True
@@ -129,16 +133,21 @@ class EngagePalette:
         catalog: DetectionCatalog | None,
         screen_w: int,
         screen_h: int,
+        now_sim: float = 0.0,
     ) -> None:
         if catalog is None or not self.visible(selection, entities):
             return
         shooters = self._shooters(selection, entities)
-        self._layout(shooters, catalog, selection, screen_w, screen_h)
+        ammo = _ammo_lines(shooters, catalog, now_sim)
+        self._layout(shooters, catalog, selection, screen_w, screen_h, len(ammo))
         surf = pygame.Surface((self._panel.w, self._panel.h), pygame.SRCALPHA)
         surf.fill((8, 10, 12, 200))
         pygame.draw.rect(surf, (*ink, 80), surf.get_rect(), 1)
         title = self._font.render("TARGETS", True, ink)
         surf.blit(title, (PAD, (TITLE_H - title.get_height()) // 2))
+        for i, line in enumerate(ammo):
+            text = self._font.render(line, True, ink)
+            surf.blit(text, (PAD, TITLE_H + i * ROW_H + (ROW_H - text.get_height()) // 2))
         mx, my = mouse
         tip: str | None = None
         for rect, action, key in self._rows:
@@ -390,7 +399,7 @@ class EngagePalette:
     def _pick(
         self, shooters, entities: Entities, selection: Selection, *, clear: bool
     ) -> None:
-        guns = [obj for obj in shooters if is_battery(obj)]
+        guns = [obj for obj in shooters if obj.kind == "artillery"]
         if not guns:
             return
         if clear:
@@ -411,10 +420,11 @@ class EngagePalette:
         selection: Selection | None,
         screen_w: int,
         screen_h: int,
+        ammo_rows: int = 0,
     ) -> None:
         _ = selection
         if self.x < 0:
-            self.x = max(12, screen_w - self._width - 12)
+            self.x = max(12, screen_w - self._width - 12 - 44)
         rows = 0
         shown: list[tuple[str, list[str]]] = []
         for branch in BRANCHES:
@@ -431,14 +441,15 @@ class EngagePalette:
         if guns:
             btn_rows = 2 if has_artillery else 1
         extra = (PAD + btn_rows * (BTN_H + 4)) if btn_rows else 0
-        height = TITLE_H + PAD + rows * ROW_H + extra + PAD
+        ammo_h = ammo_rows * ROW_H
+        height = TITLE_H + ammo_h + PAD + rows * ROW_H + extra + PAD
         self._panel = pygame.Rect(self.x, self.y, self._width, height)
         self._clamp(screen_w, screen_h)
         self._panel = pygame.Rect(self.x, self.y, self._width, height)
         self._title = pygame.Rect(self.x, self.y, self._width, TITLE_H)
         self._rows = []
         self._btns = []
-        y = self.y + TITLE_H + PAD
+        y = self.y + TITLE_H + ammo_h + PAD
         for branch, kinds in shown:
             twist = pygame.Rect(self.x + PAD, y + (ROW_H - TWIST) // 2, TWIST, TWIST)
             check = pygame.Rect(
@@ -470,8 +481,6 @@ class EngagePalette:
                 for action in ("aim", "clr", "pick"):
                     self._btns.append((pygame.Rect(x, y, BTN_W, BTN_H), action))
                     x += BTN_W + 6
-            else:
-                self._btns.append((pygame.Rect(x, y, BTN_W, BTN_H), "pick"))
 
     def _clamp(self, screen_w: int, screen_h: int) -> None:
         self.x = min(max(0, self.x), max(0, screen_w - self._panel.w))
@@ -507,3 +516,16 @@ class EngagePalette:
             )
         elif state == "mix":
             pygame.draw.rect(surf, (*ink, 200), inner.inflate(0, -inner.h // 3))
+
+
+def _ammo_lines(shooters, catalog: DetectionCatalog, now: float) -> list[str]:
+    rows: list[tuple[str, str]] = []
+    for obj in shooters:
+        cap = catalog.ammo_caption(obj, now)
+        if cap:
+            rows.append((obj.kind, cap))
+    if not rows:
+        return []
+    if len(rows) == 1:
+        return [f"AMMO  {rows[0][1]}"]
+    return [f"{kind_label(kind)}  {cap}" for kind, cap in rows[:4]]

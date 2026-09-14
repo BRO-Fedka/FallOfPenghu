@@ -136,6 +136,16 @@ class DynamicRenderer:
                         screen_h,
                         color,
                     )
+                self._draw_selected_rings(
+                    renderer,
+                    camera,
+                    entities,
+                    selection,
+                    perception,
+                    screen_w,
+                    screen_h,
+                    radar,
+                )
         marks: list[tuple[object, float]] = [(obj, 1.0) for obj in visible]
         if perception is not None:
             for mark in perception.imprints(FACTION_PLAYER):
@@ -506,6 +516,53 @@ class DynamicRenderer:
             )
         if boxes:
             renderer.overlay_aalines(boxes, FOCUS_COLOR)
+
+    def _draw_selected_rings(
+        self,
+        renderer,
+        camera: Camera,
+        entities: Entities,
+        selection: Selection,
+        perception: Perception,
+        screen_w: int,
+        screen_h: int,
+        radar: bool,
+    ) -> None:
+        picked: list[GameObject] = []
+        for oid in selection.selected:
+            obj = entities.get(oid)
+            if obj is None or not obj.active:
+                continue
+            if obj.faction != FACTION_PLAYER:
+                continue
+            picked.append(obj)
+        if not picked:
+            return
+        colors = {kind: color for kind, color, _label in RANGE_RINGS}
+        fallback = (210, 190, 120, 180)
+        by_color: dict[tuple[int, int, int, int], list[tuple[float, float, float]]] = {}
+        for obj in picked:
+            color = colors.get(obj.kind, fallback)
+            radius = perception.catalog.engagement_m(obj.kind)
+            if radius is None:
+                continue
+            by_color.setdefault(color, []).append((obj.x, obj.y, radius))
+            inner = perception.catalog.min_engagement_m(obj.kind)
+            if inner > 0.0:
+                by_color[color].append((obj.x, obj.y, inner))
+        for color, rings in by_color.items():
+            self._draw_rings(renderer, camera, rings, screen_w, screen_h, color)
+        if radar:
+            return
+        for _ring_id, channel, cover, color, _label in VISION_RINGS:
+            self._draw_rings(
+                renderer,
+                camera,
+                perception.sensor_rings_for(picked, channel, cover),
+                screen_w,
+                screen_h,
+                color,
+            )
 
     def _draw_rings(
         self,

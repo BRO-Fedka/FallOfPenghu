@@ -29,6 +29,7 @@ Thumbs.db
 # Local runtime data
 saves/
 logs/
+assets/menu_theater/source/
 **/sim_bake.pkl
 *.log
 output/*.pkl

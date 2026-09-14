@@ -11,10 +11,15 @@ uniform vec3 u_water_shallow;
 uniform float u_shallow_width;
 uniform float u_deep_start;
 uniform float u_deep_end;
+uniform float u_simple;
 in vec2 v_uv;
 out vec4 f_color;
 
 void main() {
+    if (u_simple > 0.5) {
+        f_color = vec4(u_water_mid, 1.0);
+        return;
+    }
     vec2 world = mix(u_view.xy, u_view.zw, v_uv);
     vec2 span = max(u_frame.zw - u_frame.xy, vec2(1.0));
     float n = max(u_tex_size, 2.0);

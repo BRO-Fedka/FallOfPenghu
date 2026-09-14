@@ -12,14 +12,15 @@ from fall_of_penghu.world.world import World
 class ChinaDirector:
     """PLA arrives from the sea. Layers: intel, air, naval, ground."""
 
-    def __init__(self, world: World) -> None:
+    def __init__(self, world: World, *, bootstrap: bool = True) -> None:
         self.log = DecisionLog()
         self.intel = IntelOps(self.log)
         self.air = AirOps(self.log, world.seed)
         self.naval = NavalOps(self.log)
         self.ground = GroundOps(self.log)
         self.intel.bake(world)
-        self.air.ensure_carrier(world)
+        if bootstrap:
+            self.air.ensure_carrier(world)
 
     def step(self, world: World) -> None:
         if world.clock.dt_sim <= 0.0:

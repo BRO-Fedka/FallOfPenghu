@@ -15,6 +15,7 @@ uniform float u_urban_threshold;
 uniform float u_urban_noise_scale;
 uniform int u_urban_octaves;
 uniform float u_urban_noise_weight;
+uniform float u_simple;
 in vec2 v_world;
 out vec4 f_color;
 
@@ -22,13 +23,21 @@ void main() {
     vec2 span = max(u_land_frame.zw - u_land_frame.xy, vec2(1.0));
     vec2 uv = clamp((v_world - u_land_frame.xy) / span, 0.0, 1.0);
     float field = texture(u_landf, uv).r * u_band_width;
-    vec3 col = land_soil_mix(
-        v_world, field, u_land, u_rock, u_mix_max, u_mix_noise_scale, u_mix_noise_amp
-    );
     float urban = texture(u_urban, uv).r;
-    float n = urban_edge_noise(v_world, u_urban_noise_scale, u_urban_octaves);
-    if (urban + n * u_urban_noise_weight > u_urban_threshold) {
-        col = u_concrete;
+    vec3 col;
+    if (u_simple > 0.5) {
+        col = field >= u_mix_max * 0.5 ? u_land : u_rock;
+        if (urban > u_urban_threshold) {
+            col = u_concrete;
+        }
+    } else {
+        col = land_soil_mix(
+            v_world, field, u_land, u_rock, u_mix_max, u_mix_noise_scale, u_mix_noise_amp
+        );
+        float n = urban_edge_noise(v_world, u_urban_noise_scale, u_urban_octaves);
+        if (urban + n * u_urban_noise_weight > u_urban_threshold) {
+            col = u_concrete;
+        }
     }
     f_color = vec4(col, 1.0);
 }

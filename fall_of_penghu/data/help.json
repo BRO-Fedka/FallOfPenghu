@@ -1,0 +1,130 @@
+{
+  "format": "fall-of-penghu-help",
+  "version": 1,
+  "tabs": [
+    {
+      "id": "map",
+      "title": "MAP",
+      "lead": "Move the theater. Units stay put until you order them.",
+      "shots": [
+        {
+          "file": "help_map_pan.png",
+          "caption": "WASD pans. Hold MMB and drag for the same."
+        },
+        {
+          "file": "help_map_zoom.png",
+          "caption": "Q / E or the wheel zooms. Home recenters Penghu."
+        },
+        {
+          "file": "help_map_time.png",
+          "caption": "Space pauses. F1…F5 set speed. Top bar shows the same."
+        },
+        {
+          "file": "help_map_radar.png",
+          "caption": "R or MOD R switches the radar plot. N is the map."
+        }
+      ],
+      "notes": [
+        "Esc opens the pause sheet. It does not quit.",
+        "F11 is the frame profiler. F12 is debug chrome."
+      ]
+    },
+    {
+      "id": "units",
+      "title": "UNITS",
+      "lead": "Select, then point. The planner stays on land, water, or air.",
+      "shots": [
+        {
+          "file": "help_unit_select.png",
+          "caption": "LMB picks a unit. Shift+drag boxes a group."
+        },
+        {
+          "file": "help_unit_move.png",
+          "caption": "RMB sends the selection. Land will not walk into the sea."
+        },
+        {
+          "file": "help_unit_way.png",
+          "caption": "Shift+RMB adds a sea or air waypoint instead of replacing the route."
+        },
+        {
+          "file": "help_unit_halt.png",
+          "caption": "Halt from the order sheet, or give a new RMB."
+        }
+      ],
+      "notes": [
+        "One click on empty ground clears the selection.",
+        "A port, ferry, or bridge selected alone opens its local commands."
+      ]
+    },
+    {
+      "id": "sight",
+      "title": "SIGHT",
+      "lead": "You see what sensors report. China does the same.",
+      "shots": [
+        {
+          "file": "help_sight_fog.png",
+          "caption": "Unseen ground stays dark. Contacts fade when the track dies."
+        },
+        {
+          "file": "help_sight_vision.png",
+          "caption": "VISION toggles rings. RANGE is weapons. UNITS hides kinds on the map."
+        }
+      ],
+      "notes": [
+        "The CONTACTS stack is the same feed as the chat on the left.",
+        "Satellite windows are on the top bar as SAT."
+      ]
+    },
+    {
+      "id": "ports",
+      "title": "PORTS",
+      "lead": "Ferries move land units. A port holds a small pool of hulls.",
+      "shots": [
+        {
+          "file": "help_port_launch.png",
+          "caption": "Launch, then click water. The hull leaves that port."
+        },
+        {
+          "file": "help_port_load.png",
+          "caption": "Load a land unit, then unload on another shore."
+        }
+      ],
+      "notes": [
+        "Recall brings an empty ferry home. Destroy is only for a selected bridge."
+      ]
+    },
+    {
+      "id": "fire",
+      "title": "FIRE",
+      "lead": "Doctrine and magazines sit on the selected battery.",
+      "shots": [
+        {
+          "file": "help_fire_doctrine.png",
+          "caption": "FIRE / HOLD / filters. Artillery can aim a point on the map."
+        },
+        {
+          "file": "help_fire_ammo.png",
+          "caption": "Magazine / reserve on the tooltip. RLD is a clip change."
+        }
+      ],
+      "notes": [
+        "Idle units mend over two calendar days. Spare rounds do not come back."
+      ]
+    },
+    {
+      "id": "hold",
+      "title": "HOLD",
+      "lead": "There is no final win. Hold the inhabited islands as long as you can.",
+      "shots": [
+        {
+          "file": "help_hold_islands.png",
+          "caption": "An island flips when the last player ground unit leaves it."
+        }
+      ],
+      "notes": [
+        "Air does not hold ground. China wins when no player land unit remains on any island.",
+        "You may leave to the menu at any time from pause."
+      ]
+    }
+  ]
+}

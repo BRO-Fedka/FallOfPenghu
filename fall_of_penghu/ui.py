@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import math
+
 import pygame
 
 from fall_of_penghu.camera import Camera
 from fall_of_penghu.chat import LINE_H, MAX_LINES, ChatLog
+from fall_of_penghu.render.dynamic.hud_icons import HudIcons
 from fall_of_penghu.render.dynamic.icons import CHIP, IconStore
 from fall_of_penghu.render.static.tod import palette_at, phase_label
 from fall_of_penghu.selection import Selection
@@ -21,7 +24,7 @@ from fall_of_penghu.display_palette import DisplayPalette
 from fall_of_penghu.range_palette import RangePalette
 from fall_of_penghu.vision_palette import VisionPalette
 from fall_of_penghu.world.entities.transport import PORT_CAP
-from fall_of_penghu.world.perception import Perception, format_calendar_span
+from fall_of_penghu.world.perception import Perception, format_hhmm
 
 PANEL_H = 40
 DEBUG_H = 44
@@ -29,9 +32,17 @@ FPS_H = 24
 BTN_W = 52
 BTN_H = 26
 BTN_GAP = 6
-MODE_BTN_W = 28
-CLOCK_W = 148
+MODE_BTN_W = 30
 MODE_GAP = 18
+ANALOG_D = 30
+SIDE_BTN = 32
+SIDE_GAP = 8
+SIDE_MARGIN = 8
+SAT_ICON = 32
+SAT_WARN_S = 2 * 3600.0
+DIGITAL_GREEN = (72, 220, 96)
+SAT_ON = (72, 220, 96)
+SAT_OFF = (220, 56, 48)
 PORT_BTN_W = 86
 PORT_BTN_H = 24
 PORT_HINT = {
@@ -43,16 +54,35 @@ PORT_HINT = {
 }
 
 
+def _sat_icon_on(eta: float) -> bool:
+    if eta <= 0.0 or eta > SAT_WARN_S:
+        return True
+    u = 1.0 - eta / SAT_WARN_S
+    period = 0.85 - 0.70 * (u**1.15)
+    t = pygame.time.get_ticks() / 1000.0
+    return (t % period) < period * 0.5
+
+
 class Hud:
     """Chrome overlay. Top bar is always on; debug text only in debug_mode."""
 
     def __init__(self) -> None:
         self.font = pygame.font.SysFont("consolas", 16)
         self.small = pygame.font.SysFont("consolas", 14)
+        self.day_font = pygame.font.SysFont("consolas", 20, bold=True)
+        self.digital_font = pygame.font.SysFont("consolas", 18)
         self._buttons: list[tuple[pygame.Rect, float]] = []
         self._mode_buttons: list[tuple[pygame.Rect, bool]] = []
+        self._side_buttons: list[tuple[pygame.Rect, str]] = []
         self._panel_h = PANEL_H
         self._icons = IconStore()
+        self._glyphs = HudIcons()
+        self._clock_12h = False
+        self._analog_rect = pygame.Rect(0, 0, ANALOG_D, ANALOG_D)
+        self._digital_rect = pygame.Rect(0, 0, 1, 1)
+        self._sat_rect = pygame.Rect(0, 0, SAT_ICON, SAT_ICON)
+        self._day_x = 12
+        self._mode_label_x = 12
         self._port_buttons: list[tuple[pygame.Rect, str]] = []
         self._side_sig: tuple | None = None
         self._side_cache: list[tuple[pygame.Surface, tuple[int, int]]] = []
@@ -74,8 +104,12 @@ class Hud:
         entities: Entities | None = None,
         camera: Camera | None = None,
     ) -> bool:
+        self._layout(debug, screen_w)
         if y < self._panel_h:
             return True
+        for rect, _action in self._side_buttons:
+            if rect.collidepoint(x, y):
+                return True
         from fall_of_penghu.profile import prof
 
         if prof.enabled and prof.panel.hits(x, y):
@@ -99,21 +133,59 @@ class Hud:
                 return True
         return y >= screen_h - inset
 
-    def _layout(self, debug: bool) -> None:
+    def _layout(
+        self,
+        debug: bool,
+        screen_w: int = 1280,
+        clock_12h: bool | None = None,
+    ) -> None:
+        if clock_12h is None:
+            clock_12h = self._clock_12h
+        else:
+            self._clock_12h = bool(clock_12h)
         speeds: tuple[float, ...] = SPEEDS + ((DEBUG_SPEED,) if debug else ())
-        x = 12 + CLOCK_W
         y = (PANEL_H - BTN_H) // 2
+        x = 12
+        self._day_x = x
+        day_w = self.day_font.size("Day 99")[0]
+        x += day_w + 10
+        self._analog_rect = pygame.Rect(
+            x, (PANEL_H - ANALOG_D) // 2, ANALOG_D, ANALOG_D
+        )
+        x = self._analog_rect.right + 8
+        sample = "00:00 p.m." if self._clock_12h else "00:00"
+        dig_w = self.digital_font.size(sample)[0] + 16
+        dig_h = 26
+        self._digital_rect = pygame.Rect(
+            x, (PANEL_H - dig_h) // 2, dig_w, dig_h
+        )
+        x = self._digital_rect.right + 12
         self._buttons = []
         for speed in speeds:
             self._buttons.append((pygame.Rect(x, y, BTN_W, BTN_H), speed))
             x += BTN_W + BTN_GAP
         x += MODE_GAP
         self._mode_label_x = x
-        label_w = 36
+        label_w = self.small.size("VIEW MODE:")[0]
         x += label_w + BTN_GAP
         self._mode_buttons = [
             (pygame.Rect(x, y, MODE_BTN_W, BTN_H), False),
             (pygame.Rect(x + MODE_BTN_W + BTN_GAP, y, MODE_BTN_W, BTN_H), True),
+        ]
+        sat_x = screen_w - SIDE_MARGIN - SAT_ICON
+        if debug:
+            sat_x -= self.small.size("DEBUG")[0] + 10
+        self._sat_rect = pygame.Rect(
+            sat_x, (PANEL_H - SAT_ICON) // 2, SAT_ICON, SAT_ICON
+        )
+        sx = screen_w - SIDE_MARGIN - SIDE_BTN
+        sy = PANEL_H + SIDE_MARGIN
+        self._side_buttons = [
+            (pygame.Rect(sx, sy, SIDE_BTN, SIDE_BTN), "pause"),
+            (
+                pygame.Rect(sx, sy + SIDE_BTN + SIDE_GAP, SIDE_BTN, SIDE_BTN),
+                "help",
+            ),
         ]
 
     @staticmethod
@@ -208,10 +280,14 @@ class Hud:
         entities: Entities | None = None,
         screen_w: int = 1280,
         screen_h: int = 720,
-    ) -> bool:
+        clock_12h: bool = False,
+    ) -> bool | str:
         if event.type != pygame.MOUSEBUTTONDOWN or event.button != 1:
             return False
-        self._layout(camera.debug_mode)
+        self._layout(camera.debug_mode, screen_w, clock_12h)
+        for rect, action in self._side_buttons:
+            if rect.collidepoint(event.pos):
+                return action
         for rect, speed in self._buttons:
             if rect.collidepoint(event.pos):
                 clock.set_speed(speed)
@@ -296,19 +372,22 @@ class Hud:
         display: DisplayPalette | None = None,
         heat_probe: tuple[float, float, float] | None = None,
         defeated: bool = False,
+        clock_12h: bool = False,
     ) -> None:
         from fall_of_penghu.profile import scope
 
         debug = camera.debug_mode
-        self._layout(debug)
+        self._layout(debug, screen_w, clock_12h)
         self._layout_port_menu(selection, entities, camera, screen_w, screen_h)
         pal = palette_at(clock.time_of_day)
         ink = pal["hud"]
         bar = pygame.Surface((screen_w, PANEL_H), pygame.SRCALPHA)
         bar.fill((8, 10, 12, 170))
 
-        clock_surf = self.font.render(clock.clock_label(), True, ink)
-        bar.blit(clock_surf, (12, (PANEL_H - clock_surf.get_height()) // 2))
+        day_surf = self.day_font.render(f"Day {clock.day_number()}", True, ink)
+        bar.blit(day_surf, (self._day_x, (PANEL_H - day_surf.get_height()) // 2))
+        self._draw_analog(bar, self._analog_rect, clock.time_of_day, ink)
+        self._draw_digital(bar, clock.digital_label(clock_12h))
 
         for rect, speed in self._buttons:
             selected = abs(clock.speed - speed) < 1e-6
@@ -325,52 +404,46 @@ class Hud:
                 ),
             )
 
-        mode_label = self.small.render("MOD", True, ink)
+        mode_label = self.small.render("VIEW MODE:", True, ink)
         bar.blit(
             mode_label,
             (self._mode_label_x, (PANEL_H - mode_label.get_height()) // 2),
         )
+        mx, my = mouse_screen
         for rect, radar in self._mode_buttons:
             selected = camera.radar_mode == radar
-            fill = (ink[0], ink[1], ink[2], 55 if selected else 18)
-            pygame.draw.rect(bar, fill, rect, border_radius=3)
-            pygame.draw.rect(bar, (*ink, 200 if selected else 90), rect, 1, border_radius=3)
-            text = self.small.render("R" if radar else "N", True, ink)
-            bar.blit(
-                text,
-                (
-                    rect.x + (rect.w - text.get_width()) // 2,
-                    rect.y + (rect.h - text.get_height()) // 2,
-                ),
+            hot = rect.collidepoint(mx, my)
+            fill_a = 55 if selected else 28 if hot else 18
+            pygame.draw.rect(bar, (*ink, fill_a), rect, border_radius=3)
+            pygame.draw.rect(
+                bar,
+                (*ink, 200 if selected else 110 if hot else 90),
+                rect,
+                1,
+                border_radius=3,
             )
-
-        if perception is not None and entities is not None and selection is not None:
-            ammo = _selection_ammo(
-                selection, entities, perception.catalog, clock.simulation_time
-            )
-            if ammo:
-                last = self._mode_buttons[-1][0]
-                label = self.small.render(ammo, True, ink)
+            glyph = self._glyphs.get("radar" if radar else "map", 18)
+            if glyph is not None:
                 bar.blit(
-                    label,
-                    (last.right + MODE_GAP, (PANEL_H - label.get_height()) // 2),
+                    glyph,
+                    (
+                        rect.x + (rect.w - glyph.get_width()) // 2,
+                        rect.y + (rect.h - glyph.get_height()) // 2,
+                    ),
                 )
 
         if perception is not None:
-            sat = perception.satellite_status(clock.calendar_time)
-            if sat.active:
-                sat_text = f"SAT ON  {format_calendar_span(sat.remain_calendar_s)}"
-            else:
-                sat_text = f"SAT  {format_calendar_span(sat.until_start_calendar_s)}"
-            sat_surf = self.small.render(sat_text, True, ink)
-            right = screen_w - sat_surf.get_width() - (88 if debug else 12)
-            bar.blit(sat_surf, (right, (PANEL_H - sat_surf.get_height()) // 2))
+            self._draw_satellite(bar, perception.satellite_status(clock.calendar_time), ink)
 
         if debug:
             badge = self.small.render("DEBUG", True, ink)
-            bar.blit(badge, (screen_w - badge.get_width() - 12, (PANEL_H - badge.get_height()) // 2))
+            bar.blit(
+                badge,
+                (screen_w - badge.get_width() - 12, (PANEL_H - badge.get_height()) // 2),
+            )
 
         renderer.overlay(bar, (0, 0))
+        self._blit_rail(renderer, mouse_screen)
 
         if defeated:
             banner = self.font.render("DEFEAT — no player units remain on the islands", True, ink)
@@ -464,7 +537,7 @@ class Hud:
                 "Shift+RMB sea/air waypoints  Q/E zoom  "
                 "Shift+Del delete  F11 frame prof  F12 debug  "
                 "red=C snapshot  yellow=C imprint  "
-                "heat R/G/B=threat/land/AA  Esc quit"
+                "heat R/G/B=threat/land/AA  Esc pause"
             )
             footer = pygame.Surface((screen_w, DEBUG_H), pygame.SRCALPHA)
             footer.fill((8, 10, 12, 170))
@@ -514,7 +587,108 @@ class Hud:
                 screen_w,
                 screen_h,
                 debug,
+                clock.simulation_time,
             )
+
+    def _draw_analog(
+        self,
+        dest: pygame.Surface,
+        rect: pygame.Rect,
+        tod: float,
+        ink: tuple[int, int, int],
+    ) -> None:
+        cx = rect.x + rect.w / 2.0
+        cy = rect.y + rect.h / 2.0
+        r = rect.w / 2.0 - 1.0
+        pygame.draw.circle(dest, (0, 0, 0, 230), (int(cx), int(cy)), int(round(r)))
+        pygame.draw.circle(dest, (*ink, 190), (int(cx), int(cy)), int(round(r)), 1)
+        for i in range(12):
+            ang = math.radians(i * 30 - 90)
+            inner = r - (4.0 if i % 3 == 0 else 2.2)
+            pygame.draw.line(
+                dest,
+                (*ink, 200 if i % 3 == 0 else 90),
+                (cx + math.cos(ang) * inner, cy + math.sin(ang) * inner),
+                (cx + math.cos(ang) * (r - 1.0), cy + math.sin(ang) * (r - 1.0)),
+                1,
+            )
+        hours = (tod * 24.0) % 12.0
+        ang = math.radians(hours * 30.0 - 90.0)
+        pygame.draw.line(
+            dest,
+            (*ink, 230),
+            (cx, cy),
+            (cx + math.cos(ang) * (r - 6.0), cy + math.sin(ang) * (r - 6.0)),
+            2,
+        )
+        pygame.draw.circle(dest, (*ink, 230), (int(cx), int(cy)), 2)
+
+    def _draw_digital(self, dest: pygame.Surface, text: str) -> None:
+        rect = self._digital_rect
+        pygame.draw.rect(dest, (0, 0, 0, 255), rect, border_radius=3)
+        glyph = self.digital_font.render(text, True, DIGITAL_GREEN)
+        dest.blit(
+            glyph,
+            (
+                rect.x + (rect.w - glyph.get_width()) // 2,
+                rect.y + (rect.h - glyph.get_height()) // 2,
+            ),
+        )
+
+    def _draw_satellite(self, dest: pygame.Surface, sat, ink: tuple[int, int, int]) -> None:
+        _ = ink
+        color = SAT_ON if sat.active else SAT_OFF
+        eta = sat.remain_calendar_s if sat.active else sat.until_start_calendar_s
+        if not _sat_icon_on(eta):
+            return
+        rect = self._sat_rect
+        name = "satellite_green" if sat.active else "satellite_red"
+        glyph = self._glyphs.get(name, SAT_ICON)
+        if glyph is not None:
+            dest.blit(
+                glyph,
+                (
+                    rect.x + (rect.w - glyph.get_width()) // 2,
+                    rect.y + (rect.h - glyph.get_height()) // 2,
+                ),
+            )
+        span = self.small.render(format_hhmm(eta), True, color)
+        dest.blit(
+            span,
+            (
+                rect.x - 8 - span.get_width(),
+                (PANEL_H - span.get_height()) // 2,
+            ),
+        )
+
+    def _blit_rail(self, renderer, mouse: tuple[int, int]) -> None:
+        mx, my = mouse
+        for rect, action in self._side_buttons:
+            hover = rect.collidepoint(mx, my)
+            surf = pygame.Surface((rect.w, rect.h), pygame.SRCALPHA)
+            pygame.draw.rect(
+                surf,
+                (0, 0, 0, 150 if hover else 115),
+                surf.get_rect(),
+                border_radius=3,
+            )
+            pygame.draw.rect(
+                surf,
+                (255, 255, 255, 40 if hover else 22),
+                surf.get_rect(),
+                1,
+                border_radius=3,
+            )
+            icon = self._glyphs.get(action, 20)
+            if icon is not None:
+                surf.blit(
+                    icon,
+                    (
+                        (rect.w - icon.get_width()) // 2,
+                        (rect.h - icon.get_height()) // 2,
+                    ),
+                )
+            renderer.overlay(surf, (rect.x, rect.y))
 
     def _blit_side_panels(
         self,
@@ -534,6 +708,7 @@ class Hud:
         screen_w,
         screen_h,
         debug,
+        now_sim,
     ) -> None:
         mx, my = mouse_screen
         inset = DEBUG_H if debug else FPS_H
@@ -561,7 +736,12 @@ class Hud:
             else (display.x, display.y, frozenset(display.enabled), tuple(display._open.items())),
             None
             if engage is None
-            else (engage.x, engage.y, tuple(engage._open.items())),
+            else (
+                engage.x,
+                engage.y,
+                tuple(engage._open.items()),
+                _ammo_sig(selection, entities, perception, now_sim),
+            ),
             None
             if palette is None
             else (palette.x, palette.y, palette.kind, palette.faction),
@@ -589,6 +769,7 @@ class Hud:
                 None if perception is None else perception.catalog,
                 screen_w,
                 screen_h,
+                now_sim,
             )
         if vision is not None:
             vision.blit(buf, mouse_screen, ink, screen_w, screen_h)
@@ -712,15 +893,16 @@ class _OverlayBuf:
         self.inner.overlay(surf, pos)
 
 
-def _selection_ammo(
-    selection: Selection,
-    entities: Entities,
-    catalog,
-    now: float,
-) -> str | None:
-    if len(selection.selected) != 1:
+def _ammo_sig(selection, entities, perception, now: float):
+    if selection is None or entities is None or perception is None:
         return None
-    obj = entities.get(next(iter(selection.selected)))
-    if obj is None:
-        return None
-    return catalog.ammo_caption(obj, now)
+    parts: list[tuple[str, str]] = []
+    catalog = perception.catalog
+    for oid in sorted(selection.selected):
+        obj = entities.get(oid)
+        if obj is None:
+            continue
+        cap = catalog.ammo_caption(obj, now)
+        if cap:
+            parts.append((obj.kind, cap))
+    return tuple(parts)

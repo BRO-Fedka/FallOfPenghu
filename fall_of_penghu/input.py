@@ -5,7 +5,6 @@ import pygame
 from fall_of_penghu.camera import KEYBOARD_TICK_S, Camera
 from fall_of_penghu.selection import DRAG_PX, Selection, pick_at
 from fall_of_penghu.world.clock import DEBUG_SPEED, SPEEDS, Clock
-from fall_of_penghu.world.combat.doctrine import is_battery
 from fall_of_penghu.world.entities import (
     DynamicObject,
     Entities,
@@ -79,7 +78,7 @@ class Input:
             self.resize_to = (event.w, event.h)
         elif event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE:
-                self.quit = True
+                return
             elif event.key == pygame.K_r:
                 camera.radar_mode = not camera.radar_mode
             elif event.key == pygame.K_SPACE:
@@ -488,8 +487,11 @@ def _focus_guns(entities: Entities, selection: Selection) -> list:
     out = []
     for oid in selection.selected:
         obj = entities.get(oid)
-        if is_battery(obj) and obj is not None and obj.faction == FACTION_PLAYER:
-            out.append(obj)
+        if obj is None or obj.kind != "artillery":
+            continue
+        if obj.faction != FACTION_PLAYER:
+            continue
+        out.append(obj)
     return out
 
 

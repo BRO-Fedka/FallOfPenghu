@@ -61,6 +61,15 @@ class ObjectManager:
         if self.planner is not None:
             self.bind_ground(obj)
 
+    def replace_saved(
+        self, objects: list[GameObject], forgotten: set[str]
+    ) -> None:
+        """Swap the live table for a slot. Does not stamp or touch sites.json."""
+        self._by_id = {obj.id: obj for obj in objects}
+        self.forgotten_ids = set(forgotten)
+        self._rebind_bridges()
+        self.bind_all_ground()
+
     def _stamp(self, obj: GameObject) -> None:
         catalog = self._catalog
         if catalog is None:
@@ -80,7 +89,12 @@ class ObjectManager:
     def discard(self, object_id: str) -> None:
         self._by_id.pop(object_id, None)
 
-    def populate(self, world: MapData, sites_path: Path | None = None) -> None:
+    def populate(
+        self,
+        world: MapData,
+        sites_path: Path | None = None,
+        bake=None,
+    ) -> None:
         path = sites_path
         if path is None:
             if world.map_dir is None:
@@ -121,7 +135,7 @@ class ObjectManager:
                     mobility=str(rec.get("mobility") or "land"),
                 )
             )
-        self.planner = Planner(world)
+        self.planner = Planner(world, bake=bake)
         self.planner.land.bind_bridges(
             [obj for obj in self._by_id.values() if obj.kind == "bridge"]
         )

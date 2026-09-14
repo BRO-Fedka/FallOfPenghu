@@ -3,12 +3,17 @@
 uniform sampler2D u_map;
 uniform vec2 u_resolution;
 uniform float u_time;
+uniform float u_fxaa;
 in vec2 v_uv;
 out vec4 f_color;
 
 // Compact FXAA. MSAA already smoothed the FBO; this knocks down leftover jaggies
 // on 1-pixel building edges. u_time stays wired for later effects.
 void main() {
+    if (u_fxaa < 0.5) {
+        f_color = vec4(texture(u_map, v_uv).rgb, 1.0);
+        return;
+    }
     vec2 texel = 1.0 / max(u_resolution, vec2(1.0));
     vec3 rgbM = texture(u_map, v_uv).rgb;
     vec3 rgbN = texture(u_map, v_uv + vec2(0.0, -texel.y)).rgb;

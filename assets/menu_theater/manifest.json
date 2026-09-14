@@ -1,0 +1,28 @@
+{
+  "format": "fall-of-penghu-menu-theater",
+  "center_lonlat": [
+    119.01555555555555,
+    23.821666666666665
+  ],
+  "size_m": [
+    320000.0,
+    166000.0
+  ],
+  "pixels": [
+    5760,
+    3240
+  ],
+  "tile": [
+    1920,
+    1080
+  ],
+  "seed": 20260913,
+  "land_polygons": 55,
+  "marks": 264,
+  "variants": [
+    "day",
+    "night",
+    "radar"
+  ],
+  "notes": "All land uses in-game taiwan ink. Same marks on every variant."
+}

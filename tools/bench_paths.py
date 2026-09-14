@@ -126,6 +126,7 @@ def audit(world: World, mobility: str, pairs, label: str) -> None:
     fails = 0
     illegal = 0
     worst = 0
+    spans = 0
     detour = 0.0
     for a, b in pairs:
         unit = DynamicObject(
@@ -149,6 +150,10 @@ def audit(world: World, mobility: str, pairs, label: str) -> None:
         if bad:
             illegal += 1
             worst = max(worst, bad)
+            if getattr(route, "bridges", None):
+                spans += 1
+            else:
+                print(f"    wet route {a} -> {b} pts={len(route.points)} bad={bad}")
         direct = ((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2) ** 0.5 or 1.0
         detour = max(detour, route.length / direct)
     times.sort()
@@ -156,7 +161,7 @@ def audit(world: World, mobility: str, pairs, label: str) -> None:
     mid = times[len(times) // 2] if times else 0.0
     print(
         f"  {label:22s} n={len(pairs):3d} no_route={fails:3d} "
-        f"illegal={illegal:3d} worst_pts={worst:3d} "
+        f"illegal={illegal:3d} bridged={spans:3d} worst_pts={worst:3d} "
         f"max_detour={detour:5.2f}x  median={mid:6.1f} ms  max={hi:8.1f} ms"
     )
 
@@ -254,7 +259,11 @@ def main() -> None:
     sea = _sea_pairs(world, rng, 40)
     audit(world, "sea", sea, "sea cold")
     audit(world, "sea", sea, "sea warm")
-    print(f"  coast cells {len(world.entities.planner._sea_coast)}")
+    planner = world.entities.planner
+    print(
+        f"  coast cells {len(planner._sea_coast)}  "
+        f"sea leaves {len(planner.sea.nodes)}"
+    )
 
 
 if __name__ == "__main__":

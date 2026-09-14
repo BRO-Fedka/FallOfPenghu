@@ -1,4 +1,9 @@
-from fall_of_penghu.render.display import GameDisplay, MapRenderer, create_game_display
+from fall_of_penghu.render.display import (
+    GameDisplay,
+    MapRenderer,
+    create_game_display,
+    open_display,
+)
 from fall_of_penghu.render.dynamic import DynamicRenderer
 from fall_of_penghu.render.static.backends.gpu import GpuInfo
 from fall_of_penghu.render.static.backends.software import SoftwareMapRenderer
@@ -13,5 +18,6 @@ __all__ = [
     "MapRenderer",
     "SoftwareMapRenderer",
     "create_game_display",
+    "open_display",
     "palette_for",
 ]

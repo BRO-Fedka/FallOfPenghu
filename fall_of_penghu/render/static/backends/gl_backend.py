@@ -55,11 +55,12 @@ def _repo_root() -> Path:
 MESH_CACHE = _repo_root() / "output" / "gl_meshes_v1.pkl"
 FULLSCREEN_TRI = array("f", [-1.0, -1.0, 3.0, -1.0, -1.0, 3.0])
 MSAA_SAMPLES = 4
+AA_SAMPLES = {"off": 0, "fxaa": 0, "msaa2": 2, "msaa4": 4, "msaa8": 8}
 MIN_ROAD_WIDTH_M = 2.0
 PIER_FIELD_NAME = "piers_field.npz"
 FIELD_CACHE_NAME = "gl_fields_v1.npz"
 SDF_TEX_MAX_DIM = 4096
-RING_HALF_PX = 0.5
+RING_HALF_PX = 0.25
 RING_VERT_BYTES = 20
 
 
@@ -98,6 +99,19 @@ def _shader(name: str) -> str:
 def _set_uniform(prog, name: str, value) -> None:
     if name in prog:
         prog[name].value = value
+
+
+def _release(*objs) -> None:
+    for obj in objs:
+        if obj is None:
+            continue
+        drop = getattr(obj, "release", None)
+        if drop is None:
+            continue
+        try:
+            drop()
+        except Exception:
+            pass
 
 
 def _concat(chunks: list[array]) -> array:
@@ -368,12 +382,22 @@ class GLMapRenderer:
 
     backend = "gl"
 
-    def __init__(self, world: MapData, ctx, size: tuple[int, int]) -> None:
+    def __init__(
+        self,
+        world: MapData,
+        ctx,
+        size: tuple[int, int],
+        *,
+        simple_shaders: bool = False,
+        antialias: str = "msaa4",
+    ) -> None:
         import moderngl
 
         self.mgl = moderngl
         self.world = world
         self.ctx = ctx
+        self.simple_shaders = bool(simple_shaders)
+        self.antialias = antialias if antialias in AA_SAMPLES else "msaa4"
         self.radar = False
         self.tod = 0.5
         self.last_stats: dict[str, int] = {}
@@ -381,6 +405,8 @@ class GLMapRenderer:
         self._t0 = perf_counter()
         self._cpu_meshes: dict[int, array] = {}
         self.layers: dict[str, StaticMesh] = {}
+        self._solid_vaos: dict[str, object] = {}
+        self._crown_vaos: dict[str, object] = {}
         self.water = WaterParams()
         self.veg = VegParams()
         self.urban = UrbanParams()
@@ -434,17 +460,14 @@ class GLMapRenderer:
             vertex_shader=_shader("ring.vert"),
             fragment_shader=_shader("ring.frag"),
         )
-        self.prog_veg = None
-        self.prog_veg_grass = None
-        if VEG_DETAIL_CROWNS:
-            self.prog_veg = ctx.program(
-                vertex_shader=_shader("veg.vert"),
-                fragment_shader=_shader("veg.frag"),
-            )
-            self.prog_veg_grass = ctx.program(
-                vertex_shader=_shader("veg.vert"),
-                fragment_shader=_shader("veg_grass.frag"),
-            )
+        self.prog_veg = ctx.program(
+            vertex_shader=_shader("veg.vert"),
+            fragment_shader=_shader("veg.frag"),
+        )
+        self.prog_veg_grass = ctx.program(
+            vertex_shader=_shader("veg.vert"),
+            fragment_shader=_shader("veg_grass.frag"),
+        )
         self.prog_veg_sdf = ctx.program(
             vertex_shader=_shader("veg_sdf.vert"),
             fragment_shader=_shader("veg_sdf.frag"),
@@ -530,6 +553,75 @@ class GLMapRenderer:
             ctx.enable(moderngl.MULTISAMPLE)
         _set_uniform(self.prog_map, "u_opacity", 1.0)
         _set_uniform(self.prog_map, "u_tint", (1.0, 1.0, 1.0))
+
+    def release(self) -> None:
+        """Drop map meshes, fields, and FBOs. The window context stays."""
+        self._release_fbos()
+        self._release_road_field()
+        for mesh in self.layers.values():
+            _release(mesh.vao, mesh.vbo)
+        self.layers.clear()
+        for row in self._radar_fill:
+            _release(row[1])
+        self._radar_fill.clear()
+        for tex in self._overlay_tex_cache.values():
+            _release(tex)
+        self._overlay_tex_cache.clear()
+        _release(
+            self._sea_tex,
+            self._veg_tex,
+            self._veg_mix_tex,
+            self._land_tex,
+            self._urban_tex,
+            self._pier_tex,
+            self._shore_vao,
+            self._land_sdf_vao,
+            self._veg_union_sdf_vao,
+            self._forest_sdf_vao,
+            self._grass_sdf_vao,
+            self._radar_coast_vao,
+            self._radar_coast_vbo,
+            self._radar_airport_vao,
+            self._radar_airport_vbo,
+            self._radar_iso_vao,
+            self._radar_iso_vbo,
+            self._radar_grid_line_vao,
+            self._radar_grid_line_vbo,
+            self._field_add_vao,
+            self._field_add_vbo,
+            self._sea_vao,
+            self._post_vao,
+            self._post_vbo,
+            self._overlay_vao,
+            self._overlay_vbo,
+            self._overlay_fill_vao,
+            self._overlay_fill_vbo,
+            self._ring_vao,
+            self._ring_vbo,
+            self.prog_map,
+            self.prog_land,
+            self.prog_urban_splat,
+            self.prog_road_splat,
+            self.prog_post,
+            self.prog_field_add,
+            self.prog_overlay,
+            self.prog_overlay_fill,
+            self.prog_sea,
+            self.prog_shore,
+            self.prog_radar_line,
+            self.prog_ring,
+            self.prog_veg,
+            self.prog_veg_grass,
+            self.prog_veg_sdf,
+            self.prog_veg_sdf_fill,
+        )
+        self.world = None
+        self._sea_tex = None
+        self._veg_tex = None
+        self._veg_mix_tex = None
+        self._land_tex = None
+        self._urban_tex = None
+        self._pier_tex = None
 
     def palette(self) -> dict[str, tuple[int, int, int]]:
         return palette_for(self.radar, self.tod)
@@ -628,8 +720,8 @@ class GLMapRenderer:
             world.airport_lines, lambda f: max(f.width_m, 8.0)
         )
 
-        forest_prog = self.prog_veg if VEG_DETAIL_CROWNS else self.prog_map
-        grass_prog = self.prog_veg_grass if VEG_DETAIL_CROWNS else self.prog_map
+        forest_prog = self.prog_veg if self._crowns() else self.prog_map
+        grass_prog = self.prog_veg_grass if self._crowns() else self.prog_map
         specs = {
             "taiwan": (taiwan, n_taiwan, self.prog_map),
             "coast": (coast, n_coast, self.prog_land),
@@ -1024,6 +1116,7 @@ class GLMapRenderer:
         )
         self.urban.bind(_set_uniform, prog)
         self.veg.bind(_set_uniform, prog)
+        _set_uniform(prog, "u_simple", 1.0 if self.simple_shaders else 0.0)
         mesh.vao.render(mode=self.mgl.TRIANGLES, vertices=mesh.nverts)
         return mesh.features
 
@@ -1090,7 +1183,7 @@ class GLMapRenderer:
         self._save_field_cache()
 
     def _bake_fields(self) -> None:
-        if VEG_DETAIL_CROWNS:
+        if self._crowns():
             self._upload_veg_bands()
             self._bake_veg_sdf()
         self._upload_land_bands()
@@ -1159,14 +1252,14 @@ class GLMapRenderer:
                 return False
             if "land" not in data or "frame" not in data:
                 return False
-            if VEG_DETAIL_CROWNS and ("veg" not in data or "veg_mix" not in data):
+            if self._crowns() and ("veg" not in data or "veg_mix" not in data):
                 return False
             frame = tuple(float(v) for v in data["frame"])
             width, height = (int(data["width"]), int(data["height"]))
             size = (width, height)
             land = np.ascontiguousarray(data["land"])
             veg = mix = urban = None
-            if VEG_DETAIL_CROWNS:
+            if self._crowns():
                 veg = np.ascontiguousarray(data["veg"])
                 mix = np.ascontiguousarray(data["veg_mix"])
             if "urban" in data:
@@ -1193,12 +1286,36 @@ class GLMapRenderer:
                 tex.repeat_y = False
                 self._urban_tex = tex
             print(
-                f"GL fields cache hit {width}x{height}  crowns {VEG_DETAIL_CROWNS}",
+                f"GL fields cache hit {width}x{height}  crowns {self._crowns()}",
                 flush=True,
             )
             return True
         except Exception as exc:
             print(f"GL fields cache miss ({exc})", flush=True)
+            return False
+
+    def _load_veg_from_cache(self) -> bool:
+        import numpy as np
+
+        path = self._field_cache_path()
+        if path is None or not path.is_file():
+            return False
+        try:
+            data = np.load(path)
+            if "veg" not in data or "veg_mix" not in data or "frame" not in data:
+                return False
+            frame = tuple(float(v) for v in data["frame"])
+            width, height = int(data["width"]), int(data["height"])
+            veg = np.ascontiguousarray(data["veg"])
+            mix = np.ascontiguousarray(data["veg_mix"])
+            size = (width, height)
+            self._veg_tex = self._upload_rg8(size, veg.tobytes())
+            self._veg_mix_tex = self._upload_rg8(size, mix.tobytes())
+            self._veg_frame = frame
+            self._veg_tex_size = size
+            return True
+        except Exception as exc:
+            print(f"GL veg cache miss ({exc})", flush=True)
             return False
 
     def _save_field_cache(self) -> None:
@@ -1225,7 +1342,7 @@ class GLMapRenderer:
             "height": np.int32(height),
             "land": self._read_rg8(self._land_tex),
         }
-        if VEG_DETAIL_CROWNS and self._veg_tex is not None and self._veg_mix_tex is not None:
+        if self._crowns() and self._veg_tex is not None and self._veg_mix_tex is not None:
             payload["veg"] = self._read_rg8(self._veg_tex)
             payload["veg_mix"] = self._read_rg8(self._veg_mix_tex)
         if self._urban_tex is not None:
@@ -1478,13 +1595,21 @@ class GLMapRenderer:
         mesh = self.layers.get(name)
         if mesh is None:
             return 0
-        if not VEG_DETAIL_CROWNS:
+        if not self._crowns():
             color = pal["forest"] if kind == 1 else pal["grass"]
-            return self._draw_mesh(name, color)
-        self.ctx.disable(self.mgl.BLEND)
+            return self._draw_solid_layer(name, color, view)
+        self._ensure_crowns()
         prog = self.prog_veg if kind == 1 else self.prog_veg_grass
+        if prog is None or mesh.vbo is None:
+            color = pal["forest"] if kind == 1 else pal["grass"]
+            return self._draw_solid_layer(name, color, view)
+        self.ctx.disable(self.mgl.BLEND)
         self._bind_veg(prog, kind, view, view_w, pal)
-        mesh.vao.render(mode=self.mgl.TRIANGLES, vertices=mesh.nverts)
+        vao = self._crown_vaos.get(name)
+        if vao is None:
+            vao = self.ctx.vertex_array(prog, [(mesh.vbo, "2f", "in_pos")])
+            self._crown_vaos[name] = vao
+        vao.render(mode=self.mgl.TRIANGLES, vertices=mesh.nverts)
         return mesh.features
 
     def _draw_shore(
@@ -1493,7 +1618,7 @@ class GLMapRenderer:
         view_w: float,
         pal: dict[str, tuple[int, int, int]],
     ) -> None:
-        if self._shore_vao is None:
+        if self.simple_shaders or self._shore_vao is None:
             return
         self.ctx.enable(self.mgl.BLEND)
         _set_uniform(self.prog_shore, "u_view", view)
@@ -1519,7 +1644,60 @@ class GLMapRenderer:
         _set_uniform(self.prog_sea, "u_max_dist", SEA_MAX_DIST_M)
         _set_uniform(self.prog_sea, "u_tex_size", float(SEA_TEX_SIZE))
         self.water.bind(_set_uniform, self.prog_sea, pal)
+        _set_uniform(self.prog_sea, "u_simple", 1.0 if self.simple_shaders else 0.0)
         self._sea_vao.render(mode=self.mgl.TRIANGLES, vertices=3)
+
+    def apply_graphics(self, *, simple_shaders: bool, antialias: str) -> None:
+        self.simple_shaders = bool(simple_shaders)
+        if self._crowns():
+            self._ensure_crowns()
+        mode = antialias if antialias in AA_SAMPLES else "msaa4"
+        if mode != self.antialias:
+            self.antialias = mode
+            self._alloc_fbo(self._size[0], self._size[1])
+
+    def _ensure_crowns(self) -> None:
+        if self.prog_veg is None:
+            self.prog_veg = self.ctx.program(
+                vertex_shader=_shader("veg.vert"),
+                fragment_shader=_shader("veg.frag"),
+            )
+        if self.prog_veg_grass is None:
+            self.prog_veg_grass = self.ctx.program(
+                vertex_shader=_shader("veg.vert"),
+                fragment_shader=_shader("veg_grass.frag"),
+            )
+        if self._veg_tex is None or self._veg_mix_tex is None:
+            if not self._load_veg_from_cache():
+                self._upload_veg_bands()
+                self._bake_veg_sdf()
+
+    def _crowns(self) -> bool:
+        return VEG_DETAIL_CROWNS and not self.simple_shaders
+
+    def _draw_solid_layer(
+        self,
+        name: str,
+        color: tuple[int, int, int],
+        view: tuple[float, float, float, float],
+    ) -> int:
+        mesh = self.layers.get(name)
+        if mesh is None or mesh.vbo is None:
+            return 0
+        vao = self._solid_vaos.get(name)
+        if vao is None:
+            vao = self.ctx.vertex_array(
+                self.prog_map, [(mesh.vbo, "2f", "in_pos")]
+            )
+            self._solid_vaos[name] = vao
+        r, g, b = color
+        _set_uniform(self.prog_map, "u_view", view)
+        _set_uniform(self.prog_map, "u_tint", (1.0, 1.0, 1.0))
+        _set_uniform(self.prog_map, "u_color", (r / 255.0, g / 255.0, b / 255.0))
+        _set_uniform(self.prog_map, "u_opacity", 1.0)
+        self.ctx.disable(self.mgl.BLEND)
+        vao.render(mode=self.mgl.TRIANGLES, vertices=mesh.nverts)
+        return mesh.features
 
     def _draw_mesh(
         self, name: str, color: tuple[int, int, int], opacity: float = 1.0
@@ -1556,7 +1734,10 @@ class GLMapRenderer:
         self._fbo_tex.repeat_y = False
         self._fbo = self.ctx.framebuffer(color_attachments=[self._fbo_tex])
         self._msaa_samples = 0
-        wanted = min(MSAA_SAMPLES, int(getattr(self.ctx, "max_samples", 0) or 0))
+        wanted = min(
+            AA_SAMPLES.get(self.antialias, 0),
+            int(getattr(self.ctx, "max_samples", 0) or 0),
+        )
         if wanted >= 2:
             try:
                 self._msaa_rb = self.ctx.renderbuffer((width, height), 4, samples=wanted)
@@ -1793,6 +1974,7 @@ class GLMapRenderer:
         _set_uniform(self.prog_post, "u_map", 0)
         _set_uniform(self.prog_post, "u_resolution", (float(screen_w), float(screen_h)))
         _set_uniform(self.prog_post, "u_time", perf_counter() - self._t0)
+        _set_uniform(self.prog_post, "u_fxaa", 1.0 if self.antialias == "fxaa" else 0.0)
         self._post_vao.render(mode=self.mgl.TRIANGLES, vertices=3)
 
     def _overlay_texture(self, width: int, height: int, raw: bytes):
@@ -1820,6 +2002,7 @@ class GLMapRenderer:
         self.ctx.enable(self.mgl.BLEND)
         tex.use(0)
         _set_uniform(self.prog_overlay, "u_image", 0)
+        _set_uniform(self.prog_overlay, "u_alpha", 1.0)
         _set_uniform(
             self.prog_overlay, "u_screen", (float(self._size[0]), float(self._size[1]))
         )
