@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 from fall_of_penghu.world.entities.command import SetRoute
 from fall_of_penghu.world.entities.dynamic import DynamicObject
 from fall_of_penghu.world.entities.game_object import FACTION_CHINA, FACTION_PLAYER, GameObject
-from fall_of_penghu.world.events import ContactNotice
+from fall_of_penghu.world.notices import LIFT, post
 
 if TYPE_CHECKING:
     from fall_of_penghu.world.world import World
@@ -643,7 +643,7 @@ class Transport:
                     _notice(world, cargo.id, job.pickup, "No ferry left at port")
                     return False
                 job.ferry_id = ferry.id
-            _stow(ferry, cargo)
+            _stow(ferry, cargo, world)
             if not job.auto:
                 return False
             job.phase = "sailing"
@@ -667,7 +667,7 @@ class Transport:
                 return True
             dest = job.dest
             if ferry is not None:
-                _unstow(ferry, cargo)
+                _unstow(ferry, cargo, world)
                 if job.beach_drop:
                     _place_on_beach(world, cargo, job.drop)
                 else:
@@ -780,7 +780,7 @@ class Transport:
             return
         if dest is None:
             dest = self._job_dest(cargo_id)
-        _unstow(ferry, cargo)
+        _unstow(ferry, cargo, world)
         _drop_on_road(world, cargo, near)
         if dest is not None and hypot(cargo.x - dest[0], cargo.y - dest[1]) > BOARD_M:
             _route(world, cargo, dest)
@@ -884,7 +884,7 @@ def _cargo_at_pickup(world: World, cargo: DynamicObject, job: CrossingJob) -> bo
     return False
 
 
-def _stow(ferry: DynamicObject, cargo: DynamicObject) -> None:
+def _stow(ferry: DynamicObject, cargo: DynamicObject, world: World | None = None) -> None:
     cargo.stowed = True
     cargo.route = None
     cargo.doctrine = "hold"
@@ -892,9 +892,24 @@ def _stow(ferry: DynamicObject, cargo: DynamicObject) -> None:
     cargo.ground_id = None
     ferry.cargo_id = cargo.id
     cargo.x, cargo.y = ferry.x, ferry.y
+    if world is not None and ferry.faction == FACTION_PLAYER:
+        post(
+            world,
+            LIFT,
+            "Ferry loaded",
+            ferry.x,
+            ferry.y,
+            object_ids=(ferry.id, cargo.id),
+            filter_kind="ferry",
+            icon_kinds=("ferry", cargo.kind),
+        )
 
 
-def _unstow(ferry: DynamicObject | None, cargo: DynamicObject) -> None:
+def _unstow(
+    ferry: DynamicObject | None,
+    cargo: DynamicObject,
+    world: World | None = None,
+) -> None:
     cargo.stowed = False
     cargo.route = None
     if cargo.kind in ("aaw", "aa_pickup", "infantry", "tank", "artillery"):
@@ -902,6 +917,17 @@ def _unstow(ferry: DynamicObject | None, cargo: DynamicObject) -> None:
     if ferry is not None:
         cargo.x, cargo.y = ferry.x, ferry.y
         ferry.cargo_id = None
+    if world is not None and cargo.faction == FACTION_PLAYER:
+        post(
+            world,
+            LIFT,
+            "Cargo ashore",
+            cargo.x,
+            cargo.y,
+            object_ids=(cargo.id,) if ferry is None else (ferry.id, cargo.id),
+            filter_kind=cargo.kind,
+            icon_kinds=(cargo.kind,),
+        )
 
 
 def _ferry_count(port: GameObject) -> int:
@@ -1034,15 +1060,17 @@ def _best_shore_meet(
 def _notice(
     world: World, oid: str, xy: tuple[float, float], text: str
 ) -> None:
-    world.notices.append(
-        ContactNotice(
-            faction=FACTION_PLAYER,
-            object_ids=(oid,),
-            x=xy[0],
-            y=xy[1],
-            text=text,
-            slow_time=False,
-        )
+    cargo = world.entities.get(oid)
+    kind = cargo.kind if cargo is not None else None
+    post(
+        world,
+        LIFT,
+        text,
+        xy[0],
+        xy[1],
+        object_ids=(oid,),
+        filter_kind=kind,
+        icon_kinds=() if kind is None else (kind,),
     )
 
 

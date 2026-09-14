@@ -6,7 +6,7 @@ import pygame
 
 from fall_of_penghu.ai import ChinaDirector
 from fall_of_penghu.camera import Camera
-from fall_of_penghu.chat import ChatLog
+from fall_of_penghu.chat import ChatLog, ChatMessage
 from fall_of_penghu.debug_palette import DebugPalette
 from fall_of_penghu.display_palette import DisplayPalette
 from fall_of_penghu.engage_palette import EngagePalette
@@ -16,9 +16,10 @@ from fall_of_penghu.range_palette import RangePalette
 from fall_of_penghu.render.display import GameDisplay
 from fall_of_penghu.render.dynamic import DynamicRenderer
 from fall_of_penghu.selection import Selection
-from fall_of_penghu.shell.settings import Settings
+from fall_of_penghu.shell.settings import Settings, notice_speed, notice_visible
 from fall_of_penghu.shell.snapshot import apply_camera, apply_chat, apply_china, apply_world
-from fall_of_penghu.ui import Hud
+from fall_of_penghu.shell.theme import ink_at
+from fall_of_penghu.ui import DEBUG_H, FPS_H, Hud
 from fall_of_penghu.vision_palette import VisionPalette
 from fall_of_penghu.world import FACTION_PLAYER, World
 from fall_of_penghu.world.combat.health import wreck
@@ -86,6 +87,7 @@ class Match:
         self.units.refresh(world.catalog)
         self.dynamic = DynamicRenderer()
         self.chat = ChatLog()
+        self.chat._cfg = cfg
         self.china = ChinaDirector(world, bootstrap=snapshot is None)
         if snapshot is not None:
             apply_china(self.china, snapshot.get("china") or {})
@@ -166,6 +168,22 @@ class Match:
             screen_w,
             screen_h,
         ):
+            return None
+        inset = DEBUG_H if camera.debug_mode else FPS_H
+        chat_act = self.chat.handle_event(
+            event, self.cfg, screen_w, screen_h, inset
+        )
+        if chat_act == "chat_settings":
+            return "chat_settings"
+        if chat_act == "chat_prefs":
+            return "chat_prefs"
+        if isinstance(chat_act, ChatMessage):
+            camera.fly_to(chat_act.x, chat_act.y)
+            self.selection.selected = set(chat_act.object_ids)
+            self.selection.port_cmd = None
+            self.selection.port_id = None
+            return None
+        if chat_act:
             return None
         hud = self.hud.handle_event(
             event,
@@ -259,9 +277,11 @@ class Match:
             for notice in world.drain_notices():
                 if notice.faction != FACTION_PLAYER:
                     continue
-                if notice.slow_time:
-                    world.clock.set_speed(1.0)
-                self.chat.push(notice)
+                speed = notice_speed(self.cfg, notice)
+                if speed is not None:
+                    world.clock.set_speed(speed)
+                if notice_visible(self.cfg, notice):
+                    self.chat.push(notice, world.clock.wall_time)
         with scope("camera"):
             self.camera.step_fly_to(dt_wall, screen_w, screen_h)
 
@@ -324,6 +344,17 @@ class Match:
                 heat_probe=heat_probe,
                 defeated=world.defeat is not None and self.observing,
                 clock_12h=self.cfg.clock_12h,
+            )
+            inset = DEBUG_H if camera.debug_mode else FPS_H
+            self.chat.draw(
+                renderer,
+                self.cfg,
+                ink_at(tod),
+                screen_w,
+                screen_h,
+                mouse,
+                bottom_inset=inset,
+                wall_now=world.clock.wall_time,
             )
         if prof.enabled:
             prof.panel.blit(renderer, screen_w, screen_h)

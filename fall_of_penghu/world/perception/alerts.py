@@ -3,7 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from math import hypot
 
+from fall_of_penghu.world.entities.kinds import kind_label
 from fall_of_penghu.world.events import ContactNotice
+from fall_of_penghu.world.notices import CONTACT
 from fall_of_penghu.world.perception.catalog import DetectionCatalog
 
 
@@ -22,12 +24,7 @@ def _label(kinds: list[str]) -> str:
     if not kinds:
         return "Contact"
     if all(k == kinds[0] for k in kinds):
-        name = {
-            "drone": "Drone",
-            "ship": "Ship",
-            "aaw": "AAW",
-            "truck": "Truck",
-        }.get(kinds[0], kinds[0].title())
+        name = kind_label(kinds[0])
         n = len(kinds)
         return f"{name} contact" if n == 1 else f"{name} contact ×{n}"
     return f"Contacts ×{len(kinds)}"
@@ -75,7 +72,12 @@ class AlertTracker:
             )
         )
 
-    def flush(self, now_sim: float) -> list[ContactNotice]:
+    def flush(
+        self,
+        now_sim: float,
+        calendar_time: float = 0.0,
+        world=None,
+    ) -> list[ContactNotice]:
         window = self._catalog.cluster_window_sim_s
         keep: list[_Cluster] = []
         out: list[ContactNotice] = []
@@ -84,6 +86,9 @@ class AlertTracker:
                 keep.append(cluster)
                 continue
             ids = tuple(sorted(cluster.ids))
+            kinds = tuple(cluster.kinds)
+            same = bool(kinds) and all(k == kinds[0] for k in kinds)
+            icons = _icon_kinds(cluster.kinds, ids, world)
             out.append(
                 ContactNotice(
                     faction=cluster.faction,
@@ -92,7 +97,27 @@ class AlertTracker:
                     y=cluster.seed_y,
                     text=_label(cluster.kinds),
                     slow_time=cluster.slow_time,
+                    category=CONTACT,
+                    filter_kind=kinds[0] if same else None,
+                    icon_kinds=icons,
+                    calendar_time=calendar_time,
                 )
             )
         self._open = keep
         return out
+
+
+def _icon_kinds(kinds: list[str], ids: tuple[str, ...], world) -> tuple[str, ...]:
+    icons = list(dict.fromkeys(kinds))
+    if world is None:
+        return tuple(icons)
+    extra: list[str] = []
+    for oid in ids:
+        obj = world.entities.get(oid)
+        if obj is None or obj.kind != "ferry":
+            continue
+        cargo_id = getattr(obj, "cargo_id", None)
+        cargo = world.entities.get(cargo_id) if cargo_id else None
+        if cargo is not None and cargo.kind not in icons and cargo.kind not in extra:
+            extra.append(cargo.kind)
+    return tuple(icons + extra)

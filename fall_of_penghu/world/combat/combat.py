@@ -8,10 +8,10 @@ from fall_of_penghu.world.combat.doctrine import HOLD, accepts, is_battery
 from fall_of_penghu.world.combat.health import apply_damage, restock, wreck
 from fall_of_penghu.world.combat.priority import hit_chance_for, target_score
 from fall_of_penghu.world.entities.dynamic import DynamicObject
-from fall_of_penghu.world.entities.game_object import GameObject
+from fall_of_penghu.world.entities.game_object import FACTION_PLAYER, GameObject
 from fall_of_penghu.world.entities.intercept import Intercept
 from fall_of_penghu.world.entities.tracer import Tracer
-from fall_of_penghu.world.entities.kinds import SHOT_KINDS
+from fall_of_penghu.world.entities.kinds import SHOT_KINDS, kind_label
 from fall_of_penghu.world.perception.catalog import DetectionCatalog
 
 if TYPE_CHECKING:
@@ -123,7 +123,7 @@ class Combat:
             reach = catalog.engagement_m(battery.kind)
             if reach is None:
                 continue
-            if not _weapon_ready(battery, catalog, now):
+            if not _weapon_ready(battery, catalog, now, world):
                 continue
             if catalog.must_halt(battery.kind) and getattr(battery, "moving", False):
                 continue
@@ -134,7 +134,7 @@ class Combat:
                 if self._engage_artillery(
                     world, battery, foes, reach, doctrine, now, catalog
                 ):
-                    _spend_shot(battery, catalog, now)
+                    _spend_shot(battery, catalog, now, world)
                     in_flight[battery.id] = in_flight.get(battery.id, 0) + 1
                 continue
             if doctrine == HOLD:
@@ -146,7 +146,7 @@ class Combat:
             if target is None:
                 continue
             self._spawn(world, battery, target, now, catalog)
-            _spend_shot(battery, catalog, now)
+            _spend_shot(battery, catalog, now, world)
             if reserve:
                 claimed.add(target.id)
             in_flight[battery.id] = in_flight.get(battery.id, 0) + 1
@@ -343,9 +343,14 @@ class Combat:
         )
 
 
-def _weapon_ready(battery: DynamicObject, catalog: DetectionCatalog, now: float) -> bool:
+def _weapon_ready(
+    battery: DynamicObject,
+    catalog: DetectionCatalog,
+    now: float,
+    world: World | None = None,
+) -> bool:
     """Finish a magazine reload if due, then say whether a shot may leave now."""
-    _finish_reload(battery, catalog, now)
+    _finish_reload(battery, catalog, now, world)
     if now < float(getattr(battery, "weapon_ready_sim", 0.0) or 0.0):
         return False
     if getattr(battery, "reloading", False):
@@ -355,7 +360,12 @@ def _weapon_ready(battery: DynamicObject, catalog: DetectionCatalog, now: float)
     return True
 
 
-def _finish_reload(battery: DynamicObject, catalog: DetectionCatalog, now: float) -> None:
+def _finish_reload(
+    battery: DynamicObject,
+    catalog: DetectionCatalog,
+    now: float,
+    world: World | None = None,
+) -> None:
     if not catalog.limited_ammo(battery.kind):
         return
     if int(getattr(battery, "clip", 0) or 0) > 0:
@@ -375,16 +385,57 @@ def _finish_reload(battery: DynamicObject, catalog: DetectionCatalog, now: float
     battery.reserve = reserve - take
     battery.clip = take
     battery.reloading = False
+    if world is not None:
+        _ammo_notice(battery, world)
 
 
-def _spend_shot(battery: DynamicObject, catalog: DetectionCatalog, now: float) -> None:
+def _spend_shot(
+    battery: DynamicObject,
+    catalog: DetectionCatalog,
+    now: float,
+    world: World | None = None,
+) -> None:
     if catalog.limited_ammo(battery.kind):
         battery.clip = max(0, int(getattr(battery, "clip", 0) or 0) - 1)
+        if world is not None:
+            _ammo_notice(battery, world)
         if battery.clip <= 0 and int(getattr(battery, "reserve", 0) or 0) > 0:
             battery.reloading = True
             battery.weapon_ready_sim = now + catalog.reload_sim_s(battery.kind)
             return
     battery.weapon_ready_sim = now + catalog.cooldown_sim_s(battery.kind)
+
+
+def _ammo_notice(battery: DynamicObject, world: World) -> None:
+    if battery.faction != FACTION_PLAYER:
+        return
+    clip = int(getattr(battery, "clip", 0) or 0)
+    reserve = int(getattr(battery, "reserve", 0) or 0)
+    if clip <= 0 and reserve <= 0:
+        state = "empty"
+        text = f"{kind_label(battery.kind)} empty"
+    elif reserve <= 0 and clip > 0:
+        state = "last"
+        text = f"{kind_label(battery.kind)} last clip"
+    else:
+        if reserve > 0:
+            battery.ammo_note = None
+        return
+    if getattr(battery, "ammo_note", None) == state:
+        return
+    battery.ammo_note = state
+    from fall_of_penghu.world.notices import AMMO, post
+
+    post(
+        world,
+        AMMO,
+        text,
+        battery.x,
+        battery.y,
+        object_ids=(battery.id,),
+        filter_kind=battery.kind,
+        icon_kinds=(battery.kind,),
+    )
 
 
 def _eligible(

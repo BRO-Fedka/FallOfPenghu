@@ -13,3 +13,8 @@ class ContactNotice:
     y: float
     text: str
     slow_time: bool
+    category: str = "contact"
+    filter_kind: str | None = None
+    icon_kinds: tuple[str, ...] = ()
+    calendar_time: float = 0.0
+    sat_down: bool = False

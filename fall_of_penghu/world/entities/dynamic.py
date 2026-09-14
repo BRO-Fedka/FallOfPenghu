@@ -66,6 +66,7 @@ class DynamicObject(GameObject):
         self.xfer: str | None = None
         self.xfer_frac: float = 0.0
         self.task = ""
+        self.ammo_note: str | None = None
 
     def island_id(self) -> int | None:
         if self.stowed or self.ground != "island":

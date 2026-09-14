@@ -6,6 +6,7 @@ from typing import Any
 from fall_of_penghu.ai.heatmap import BeachPick, Ember
 from fall_of_penghu.camera import Camera
 from fall_of_penghu.chat import ChatLog, ChatMessage
+from fall_of_penghu.world.notices import color_for
 from fall_of_penghu.world.entities.dynamic import DynamicObject
 from fall_of_penghu.world.entities.game_object import GameObject
 from fall_of_penghu.world.entities.intercept import TRAIL_MAX, Intercept
@@ -57,12 +58,17 @@ def dump_match(match) -> dict[str, Any]:
         "defeat": None
         if world.defeat is None
         else {"held_s": world.defeat.held_s, "kills": dict(world.defeat.kills)},
+        "control_landings": [list(row) for row in world.control._landings],
         "chat": [
             {
                 "text": msg.text,
                 "object_ids": list(msg.object_ids),
                 "x": msg.x,
                 "y": msg.y,
+                "category": msg.category,
+                "calendar_time": msg.calendar_time,
+                "sat_down": msg.sat_down,
+                "icon_kinds": list(msg.icon_kinds),
             }
             for msg in match.chat.messages
         ],
@@ -85,6 +91,11 @@ def apply_world(world: World, data: dict[str, Any]) -> None:
         int(iid): str(fac) for iid, fac in (data.get("control") or {}).items()
     }
     world.control._ready = True
+    world.control._landings = {
+        (int(row[0]), int(row[1]))
+        for row in data.get("control_landings") or []
+        if isinstance(row, (list, tuple)) and len(row) >= 2
+    }
     _apply_combat(world.combat, data.get("combat") or {})
     _apply_perception(world.perception, data.get("perception") or {})
     world.kills = _load_kills(data.get("kills"))
@@ -188,6 +199,15 @@ def apply_chat(chat: ChatLog, rows: list[dict[str, Any]]) -> None:
             object_ids=tuple(str(oid) for oid in row.get("object_ids") or ()),
             x=float(row["x"]),
             y=float(row["y"]),
+            category=str(row.get("category") or "contact"),
+            calendar_time=float(row.get("calendar_time") or 0.0),
+            color=color_for(
+                str(row.get("category") or "contact"),
+                sat_down=bool(row.get("sat_down")),
+            ),
+            sat_down=bool(row.get("sat_down")),
+            born=0.0,
+            icon_kinds=tuple(str(kind) for kind in row.get("icon_kinds") or ()),
         )
         for row in rows
     ]
@@ -269,6 +289,7 @@ def _dump_object(obj: GameObject) -> dict[str, Any]:
                 "xfer": obj.xfer,
                 "xfer_frac": obj.xfer_frac,
                 "task": obj.task,
+                "ammo_note": obj.ammo_note,
                 "route": _dump_route(obj.route),
             }
         )
@@ -431,6 +452,8 @@ def _fill_dynamic(obj: DynamicObject, rec: dict[str, Any]) -> None:
     obj.xfer = rec.get("xfer")
     obj.xfer_frac = float(rec.get("xfer_frac") or 0.0)
     obj.task = str(rec.get("task") or "")
+    note = rec.get("ammo_note")
+    obj.ammo_note = None if note is None else str(note)
     obj.route = _load_route(rec.get("route"))
     for name, value in (rec.get("extras") or {}).items():
         setattr(obj, name, _from_json(value))
@@ -564,6 +587,8 @@ def _dump_perception(perception) -> dict[str, Any]:
             }
             for row in perception.alerts._open
         ],
+        "sat_was": perception._sat_was,
+        "spotted": [list(row) for row in perception._spotted],
     }
 
 
@@ -587,6 +612,13 @@ def _apply_perception(perception, data: dict[str, Any]) -> None:
     perception._pose_n = 0
     perception._live_ids = set()
     perception._stowed = {}
+    sat_was = data.get("sat_was")
+    perception._sat_was = None if sat_was is None else bool(sat_was)
+    perception._spotted = {
+        (str(row[0]), str(row[1]))
+        for row in data.get("spotted") or []
+        if isinstance(row, (list, tuple)) and len(row) >= 2
+    }
     perception.alerts._open = [
         _Cluster(
             faction=str(row["faction"]),

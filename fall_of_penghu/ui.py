@@ -5,7 +5,7 @@ import math
 import pygame
 
 from fall_of_penghu.camera import Camera
-from fall_of_penghu.chat import LINE_H, MAX_LINES, ChatLog
+from fall_of_penghu.chat import ChatLog
 from fall_of_penghu.render.dynamic.hud_icons import HudIcons
 from fall_of_penghu.render.dynamic.icons import CHIP, IconStore
 from fall_of_penghu.render.static.tod import palette_at, phase_label
@@ -333,16 +333,6 @@ class Hud:
                 else:
                     selection.port_cmd = cmd
                     selection.port_id = owner.id
-                return True
-        if chat is not None:
-            inset = DEBUG_H if camera.debug_mode else FPS_H
-            msg = chat.click_at(*event.pos, screen_w, screen_h, inset)
-            if msg is not None:
-                camera.fly_to(msg.x, msg.y)
-                if selection is not None:
-                    selection.selected = set(msg.object_ids)
-                    selection.port_cmd = None
-                    selection.port_id = None
                 return True
         return False
 
@@ -713,8 +703,7 @@ class Hud:
         mx, my = mouse_screen
         inset = DEBUG_H if debug else FPS_H
         over = bool(
-            (chat is not None and chat.hits(mx, my, screen_w, screen_h, inset))
-            or (debug and palette is not None and palette.hits(mx, my))
+            (debug and palette is not None and palette.hits(mx, my))
             or (engage is not None and engage.hits(mx, my, selection, entities))
             or (vision is not None and vision.hits(mx, my))
             or (ranges is not None and ranges.hits(mx, my))
@@ -725,8 +714,6 @@ class Hud:
             screen_h,
             debug,
             ink,
-            len(chat.messages) if chat is not None else 0,
-            chat.messages[-1].text if chat is not None and chat.messages else "",
             frozenset(selection.selected) if selection is not None else frozenset(),
             None if selection is None else selection.port_cmd,
             None if vision is None else (vision.x, vision.y, frozenset(vision.enabled)),
@@ -755,8 +742,6 @@ class Hud:
                 renderer.overlay(surf, pos)
             return
         buf = _OverlayBuf(renderer)
-        if chat is not None:
-            self._blit_chat(buf, chat, ink, screen_w, screen_h, inset)
         if debug and palette is not None:
             palette.blit(buf, mouse_screen, ink, screen_w, screen_h)
         if engage is not None:
@@ -850,36 +835,6 @@ class Hud:
         box.fill((8, 10, 12, 200))
         box.blit(text, (6, 4))
         renderer.overlay(box, (hx, hy))
-
-    def _blit_chat(
-        self,
-        renderer,
-        chat: ChatLog,
-        ink: tuple[int, int, int],
-        screen_w: int,
-        screen_h: int,
-        bottom_inset: int = 0,
-    ) -> None:
-        panel = chat.panel_rect(screen_w, screen_h, bottom_inset)
-        surf = pygame.Surface((panel.w, panel.h), pygame.SRCALPHA)
-        surf.fill((8, 10, 12, 180))
-        pygame.draw.rect(surf, (*ink, 70), surf.get_rect(), 1)
-        title = self.small.render("CONTACTS", True, ink)
-        surf.blit(title, (10, 6))
-        chat._rects = []
-        lines = chat.messages[-MAX_LINES:]
-        y = 28
-        for msg in reversed(lines):
-            row = pygame.Rect(6, y, panel.w - 12, LINE_H - 2)
-            pygame.draw.rect(surf, (ink[0], ink[1], ink[2], 22), row)
-            text = self.small.render(msg.text, True, ink)
-            surf.blit(text, (row.x + 6, row.y + (row.h - text.get_height()) // 2))
-            chat._rects.append(
-                (pygame.Rect(panel.x + row.x, panel.y + row.y, row.w, row.h), msg)
-            )
-            y += LINE_H
-        renderer.overlay(surf, (panel.x, panel.y))
-
 
 class _OverlayBuf:
     """Replay last side-panel surfaces when selection and chat are unchanged."""

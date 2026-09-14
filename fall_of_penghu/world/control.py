@@ -8,7 +8,7 @@ from fall_of_penghu.world.entities.game_object import (
     FACTION_PLAYER,
 )
 from fall_of_penghu.world.entities.kinds import SHOT_KINDS, is_static_kind
-from fall_of_penghu.world.events import ContactNotice
+from fall_of_penghu.world.notices import THEATER, post
 
 if TYPE_CHECKING:
     from fall_of_penghu.world.world import World
@@ -21,6 +21,7 @@ class IslandControl:
 
     def __init__(self) -> None:
         self.owner: dict[int, str] = {}
+        self._landings: set[tuple[int, int]] = set()
         self._ready = False
 
     def bake(self, world: World) -> None:
@@ -50,10 +51,18 @@ class IslandControl:
         with scope("control.ground_count"):
             here = _ground(world)
         flipped: list[tuple[int, str]] = []
+        day = world.clock.calendar_day
         for iid in islands.ids():
             row = here.get(iid) or {}
             player = row.get(FACTION_PLAYER, 0)
             china = row.get(FACTION_CHINA, 0)
+            if (
+                china > 0
+                and self.owner.get(iid, FACTION_PLAYER) == FACTION_PLAYER
+                and (day, iid) not in self._landings
+            ):
+                self._landings.add((day, iid))
+                _landing(world, iid)
             if china > 0 and player <= 0:
                 nxt = FACTION_CHINA
             elif player > 0 and china <= 0:
@@ -135,16 +144,28 @@ def _announce(world: World, island: int, faction: str) -> None:
         x = (box[0] + box[2]) * 0.5
         y = (box[1] + box[3]) * 0.5
     if faction == FACTION_CHINA:
-        text = f"Island {island} lost: ports and airfields seized"
+        text = "Island lost"
     else:
-        text = f"Island {island} recaptured"
-    world.notices.append(
-        ContactNotice(
-            faction=FACTION_PLAYER,
-            object_ids=(),
-            x=x,
-            y=y,
-            text=text,
-            slow_time=False,
-        )
-    )
+        text = "Island recaptured"
+    post(world, THEATER, text, x, y)
+
+
+def _landing(world: World, island: int) -> None:
+    x, y = _island_xy(world, island)
+    for obj in world.entities.items:
+        if not isinstance(obj, DynamicObject) or not obj.active:
+            continue
+        if obj.faction != FACTION_CHINA or obj.mobility != "land" or obj.stowed:
+            continue
+        if obj.island_id() == island:
+            x, y = obj.x, obj.y
+            break
+    post(world, THEATER, "Enemy landing", x, y)
+
+
+def _island_xy(world: World, island: int) -> tuple[float, float]:
+    planner = world.entities.planner
+    if planner is None:
+        return 0.0, 0.0
+    box = planner.land.islands.bbox(island)
+    return (box[0] + box[2]) * 0.5, (box[1] + box[3]) * 0.5

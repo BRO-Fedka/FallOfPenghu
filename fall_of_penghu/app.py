@@ -11,6 +11,7 @@ from fall_of_penghu.shell.audio import Audio
 from fall_of_penghu.shell.help import HelpBook
 from fall_of_penghu.shell.match import MAP_DIR, Match
 from fall_of_penghu.shell.panels import (
+    ChatSettingsSheet,
     LoadSheet,
     MenuSheet,
     ModalScrim,
@@ -67,6 +68,7 @@ class Host:
         self.pause = PauseSheet()
         self.surrender = SurrenderSheet()
         self.settings = SettingsSheet(self.cfg)
+        self.chat_settings = ChatSettingsSheet(self.cfg)
         self.help = HelpBook()
         self.load = LoadSheet()
         self.scrim = ModalScrim()
@@ -139,7 +141,7 @@ class Host:
             if self.overlay != "surrender":
                 self._open_overlay("help")
             return
-        if self.overlay in ("help", "settings", "load"):
+        if self.overlay in ("help", "settings", "load", "chat"):
             if self.scrim.handle_event(event):
                 self._escape()
                 return
@@ -162,6 +164,10 @@ class Host:
                         simple_shaders=self.cfg.simple_shaders,
                         antialias=self.cfg.antialias,
                     )
+            return
+        if self.overlay == "chat":
+            if self.chat_settings.handle_event(event):
+                save_settings(self.cfg)
             return
         if self.overlay == "load":
             slot_id = self.load.handle_event(event)
@@ -215,6 +221,10 @@ class Host:
                 self._open_pause()
             elif action == "help":
                 self._open_overlay("help")
+            elif action == "chat_settings":
+                self._open_overlay("chat")
+            elif action == "chat_prefs":
+                save_settings(self.cfg)
 
     def _escape(self) -> None:
         if self.state == "boot":
@@ -226,7 +236,7 @@ class Host:
             return
         if self.overlay == "surrender":
             return
-        if self.overlay in ("help", "settings", "load"):
+        if self.overlay in ("help", "settings", "load", "chat"):
             back = self.overlay_back
             self.overlay = None
             if back == "pause":
@@ -465,6 +475,11 @@ class Host:
             self._modal_back(view, form, screen_w, screen_h, mouse, tod)
             self.load.draw(view, screen_w, screen_h, mouse, tod)
             self._modal_close(view, form, screen_w, screen_h, mouse, tod)
+        elif self.overlay == "chat":
+            form = self.chat_settings.form_rect(screen_w, screen_h)
+            self._modal_back(view, form, screen_w, screen_h, mouse, tod)
+            self.chat_settings.draw(view, screen_w, screen_h, mouse, tod)
+            self._modal_close(view, form, screen_w, screen_h, mouse, tod)
 
     def _modal_back(
         self,
@@ -490,6 +505,8 @@ class Host:
             return self.help.form_rect(screen_w, screen_h)
         if self.overlay == "load":
             return self.load.form_rect(screen_w, screen_h)
+        if self.overlay == "chat":
+            return self.chat_settings.form_rect(screen_w, screen_h)
         return None
 
     def _modal_close(

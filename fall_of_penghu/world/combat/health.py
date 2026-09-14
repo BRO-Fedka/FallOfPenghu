@@ -18,11 +18,27 @@ def wreck(obj: GameObject, world: World | None = None) -> None:
     if getattr(obj, "route", None) is not None:
         obj.route = None
     cargo_id = getattr(obj, "cargo_id", None)
-    if cargo_id and world is not None:
-        cargo = world.entities.get(cargo_id)
-        if cargo is not None:
-            wreck(cargo, world)
+    cargo = world.entities.get(cargo_id) if cargo_id and world is not None else None
     combat = obj.kind not in SHOT_KINDS and not is_static_kind(obj.kind)
+    if world is not None and combat and obj.faction == FACTION_PLAYER:
+        if not getattr(obj, "stowed", False):
+            from fall_of_penghu.world.entities.kinds import kind_label
+            from fall_of_penghu.world.notices import LOSSES, post
+
+            ids = (obj.id, cargo.id) if cargo is not None else (obj.id,)
+            icons = (obj.kind, cargo.kind) if cargo is not None else (obj.kind,)
+            post(
+                world,
+                LOSSES,
+                f"{kind_label(obj.kind)} lost",
+                obj.x,
+                obj.y,
+                object_ids=ids,
+                filter_kind=obj.kind,
+                icon_kinds=icons,
+            )
+    if cargo is not None:
+        wreck(cargo, world)
     if world is not None and combat and obj.faction == FACTION_CHINA:
         world.kills[obj.kind] = world.kills.get(obj.kind, 0) + 1
     if world is not None and combat and obj.faction == FACTION_PLAYER:

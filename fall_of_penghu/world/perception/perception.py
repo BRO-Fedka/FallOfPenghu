@@ -70,6 +70,8 @@ class Perception:
         self._pose_n = 0
         self._live_ids: set[str] = set()
         self._stowed: dict[str, bool] = {}
+        self._sat_was: bool | None = None
+        self._spotted: set[tuple[str, str]] = set()
 
     def bind_map(self, world: World) -> None:
         baked = getattr(world, "sim_bake", None)
@@ -220,7 +222,83 @@ class Perception:
                 ]
         if china_due:
             self._china_wall = world.clock.wall_time
-        world.notices.extend(self.alerts.flush(now))
+        world.notices.extend(self.alerts.flush(now, world.clock.calendar_time, world))
+        self._watch_sat(world, sat_on)
+        self._watch_spotted(world, sat_on)
+
+    def _watch_sat(self, world: World, sat_on: bool) -> None:
+        from fall_of_penghu.world.notices import SAT, post
+
+        if self._sat_was is None:
+            self._sat_was = sat_on
+            return
+        if sat_on == self._sat_was:
+            return
+        self._sat_was = sat_on
+        if sat_on:
+            post(world, SAT, "SAT up", 0.0, 0.0)
+        else:
+            post(world, SAT, "SAT down", 0.0, 0.0, sat_down=True)
+
+    def _watch_spotted(self, world: World, sat_on: bool) -> None:
+        from fall_of_penghu.world.entities.dynamic import DynamicObject
+        from fall_of_penghu.world.entities.kinds import SHOT_KINDS, kind_label
+        from fall_of_penghu.world.notices import SPOTTED, post
+
+        cover = self.cover
+        if cover is None:
+            return
+        live = {obj.id for obj in world.entities.items if obj.active}
+        self._spotted = {
+            key for key in self._spotted if key[0] in live and key[1] in live
+        }
+        spotters = [
+            obj
+            for obj in self._visible.get(FACTION_PLAYER, ())
+            if obj.faction == FACTION_CHINA
+            and obj.active
+            and obj.kind in ("drone", "scout")
+        ]
+        if not spotters:
+            return
+        darkness = self._darkness
+        for eye in spotters:
+            channel = "visual_primitive" if eye.kind == "drone" else "visual_advanced"
+            by = "drone" if eye.kind == "drone" else "scout"
+            for unit in world.entities.items:
+                if not isinstance(unit, DynamicObject) or not unit.active:
+                    continue
+                if unit.faction != FACTION_PLAYER or unit.mobility != "land":
+                    continue
+                if unit.stowed or unit.kind in SHOT_KINDS:
+                    continue
+                key = (unit.id, eye.id)
+                if key in self._spotted:
+                    continue
+                terrain = cover.at(unit.x, unit.y, "ground")
+                if sat_on and terrain != "forest":
+                    continue
+                radius = self.catalog.scaled_range_m(
+                    channel, unit.kind, darkness, emitter_kind=eye.kind
+                )
+                if radius is None:
+                    continue
+                radius *= self.catalog.cover_factor(channel, terrain)
+                if radius <= 0.0:
+                    continue
+                if hypot(unit.x - eye.x, unit.y - eye.y) > radius:
+                    continue
+                self._spotted.add(key)
+                post(
+                    world,
+                    SPOTTED,
+                    f"{kind_label(unit.kind)} spotted by {by}",
+                    unit.x,
+                    unit.y,
+                    object_ids=(unit.id, eye.id),
+                    filter_kind=unit.kind,
+                    icon_kinds=(unit.kind,),
+                )
 
     def _snapshot(self, objects: list[GameObject]) -> bool:
         moved = len(objects) != self._pose_n

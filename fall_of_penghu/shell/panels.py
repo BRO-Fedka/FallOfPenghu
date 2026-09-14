@@ -10,9 +10,19 @@ from fall_of_penghu.shell.settings import (
     RENDERERS,
     Settings,
 )
+from fall_of_penghu.world.entities.game_object import FACTION_CHINA, FACTION_PLAYER
+from fall_of_penghu.world.notices import (
+    CATEGORIES,
+    CATEGORY_HINTS,
+    CATEGORY_LABELS,
+    CONTACT,
+    KIND_FILTERS,
+    SPEED_0X,
+    SPEED_1X,
+    SPEED_OFF,
+)
 from fall_of_penghu.shell.saves import list_slots
 from fall_of_penghu.shell.theme import button, fonts, frame, ink_at, label, panel, slider
-from fall_of_penghu.world.entities.game_object import FACTION_CHINA
 from fall_of_penghu.world.victory import kill_total, ordered_kills
 
 BTN_W = 220
@@ -537,6 +547,161 @@ class SettingsSheet:
         pct = self._small.render(f"{int(round(current * 100))}", True, ink)
         sheet.blit(pct, (track.right + 10, row + 6))
         return row + 40
+
+
+class ChatSettingsSheet:
+    """Per-category chat filters. Same chrome as Settings."""
+
+    def __init__(self, cfg: Settings) -> None:
+        self.cfg = cfg
+        self._title, self._font, self._small = fonts()
+        self._hits: list[tuple[pygame.Rect, str, str, object]] = []
+        self._scroll = 0
+        self._content_h = 0
+        self._view_h = 400
+        self._icons = IconStore()
+
+    def handle_event(self, event: pygame.event.Event) -> bool:
+        if event.type == pygame.MOUSEWHEEL:
+            max_scroll = max(0, self._content_h - self._view_h)
+            if event.y < 0:
+                self._scroll = min(max_scroll, self._scroll + 28)
+            elif event.y > 0:
+                self._scroll = max(0, self._scroll - 28)
+            return True
+        if event.type != pygame.MOUSEBUTTONDOWN or event.button != 1:
+            return False
+        for rect, kind, category, payload in self._hits:
+            if not rect.collidepoint(event.pos):
+                continue
+            if kind == "show":
+                self.cfg.chat_show[category] = not self.cfg.chat_show.get(category, True)
+                return True
+            if kind == "slow":
+                self.cfg.chat_slow[category] = str(payload)
+                return True
+            if kind == "kind":
+                row = self.cfg.chat_kinds.setdefault(category, {})
+                name = str(payload)
+                row[name] = not row.get(name, True)
+                return True
+        return False
+
+    def draw(
+        self,
+        target,
+        screen_w: int,
+        screen_h: int,
+        mouse: tuple[int, int],
+        tod: float = 0.5,
+    ) -> None:
+        ink = ink_at(tod)
+        form = self.form_rect(screen_w, screen_h)
+        sheet = panel((form.w, form.h), 220)
+        frame(sheet, ink, 80)
+        label(sheet, "CHAT SETTINGS", self._title, ink, (16, 14))
+        note = self._small.render(
+            "Esc back  ·  CHAT hides the line  ·  1x / 0x set match speed",
+            True,
+            ink,
+        )
+        sheet.blit(note, (16, 46))
+        self._hits = []
+        inner = pygame.Surface((form.w, 1600), pygame.SRCALPHA)
+        row = 0
+        for category in CATEGORIES:
+            row = self._category(inner, form, mouse, ink, row, category)
+        self._content_h = row + 8
+        max_scroll = max(0, self._content_h - self._view_h)
+        self._scroll = min(self._scroll, max_scroll)
+        sheet.blit(inner, (0, 72), area=pygame.Rect(0, self._scroll, form.w, self._view_h))
+        target.overlay(sheet, (form.x, form.y))
+
+    def form_rect(self, screen_w: int, screen_h: int) -> pygame.Rect:
+        w = min(640, screen_w - 48)
+        h = min(560, screen_h - 48)
+        self._view_h = max(80, h - 80)
+        return pygame.Rect((screen_w - w) // 2, (screen_h - h) // 2, w, h)
+
+    def _category(
+        self,
+        sheet: pygame.Surface,
+        form: pygame.Rect,
+        mouse: tuple[int, int],
+        ink: tuple[int, int, int],
+        row: int,
+        category: str,
+    ) -> int:
+        ox, oy = form.x, form.y + 72 - self._scroll
+        label(sheet, CATEGORY_LABELS[category], self._font, ink, (16, row + 4))
+        show_on = self.cfg.chat_show.get(category, True)
+        show = pygame.Rect(form.w - 100, row, 84, 28)
+        self._hits.append((show.move(ox, oy), "show", category, None))
+        button(
+            sheet,
+            show,
+            "CHAT ON" if show_on else "CHAT OFF",
+            self._small,
+            ink,
+            selected=show_on,
+            hover=show.move(ox, oy).collidepoint(mouse),
+        )
+        row += 32
+        hint = self._small.render(CATEGORY_HINTS[category], True, ink)
+        sheet.blit(hint, (16, row))
+        row += 24
+        label(sheet, "Speed", self._small, ink, (16, row + 6))
+        mode = str(self.cfg.chat_slow.get(category) or SPEED_OFF)
+        sx = 80
+        for value, caption in (
+            (SPEED_OFF, "OFF"),
+            (SPEED_1X, "1x"),
+            (SPEED_0X, "0x"),
+        ):
+            rect = pygame.Rect(sx, row, 52, 26)
+            self._hits.append((rect.move(ox, oy), "slow", category, value))
+            button(
+                sheet,
+                rect,
+                caption,
+                self._small,
+                ink,
+                selected=mode == value,
+                hover=rect.move(ox, oy).collidepoint(mouse),
+            )
+            sx += 58
+        row += 34
+        names = KIND_FILTERS.get(category)
+        if not names:
+            return row + 10
+        faction = FACTION_CHINA if category == CONTACT else FACTION_PLAYER
+        x = 16
+        chip = CHIP + 8
+        for name in names:
+            if x + chip > form.w - 16:
+                x = 16
+                row += chip + 6
+            local = pygame.Rect(x, row, chip, chip)
+            on = self.cfg.chat_kinds.get(category, {}).get(name, True)
+            self._hits.append((local.move(ox, oy), "kind", category, name))
+            button(
+                sheet,
+                local,
+                "",
+                self._small,
+                ink,
+                selected=on,
+                hover=local.move(ox, oy).collidepoint(mouse),
+            )
+            icon = self._icons.get(name, faction, False)
+            if icon is not None:
+                if not on:
+                    faded = icon.copy()
+                    faded.set_alpha(90)
+                    icon = faded
+                sheet.blit(icon, icon.get_rect(center=local.center))
+            x += chip + 6
+        return row + chip + 16
 
 
 class LoadSheet:
